@@ -166,6 +166,11 @@ public final class Town {
         for (Traits.Club club : Traits.Club.values()) notice(place(Routines.clubPlace(club)), -2, "club:" + club.name());
         notice(place("shops"), -2, "shop");
         notice(place("courtyard_w"), 2, "shop");
+        // Places to eat and something to wear, on the shop fronts along the street, a stand on the beach and one by the station.
+        onWall(new BlockPos(-702, 23, -124), Direction.NORTH, "food:ramen");
+        onWall(new BlockPos(-698, 23, -124), Direction.NORTH, "clothes");
+        post(new BlockPos(-724, 23, -216), Direction.SOUTH, "food:beach");
+        post(new BlockPos(-691, 23, -66), Direction.EAST, "food:soba");
         for (District d : District.values()) {
             List<Home> here = homes.stream().filter(h -> h.district() == d).toList();
             double x = here.stream().mapToInt(h -> h.bedHead().getX()).average().orElse(0), z = here.stream().mapToInt(h -> h.bedHead().getZ()).average().orElse(0);
@@ -180,6 +185,19 @@ public final class Town {
         registers.put(at, what);
         set(at.getX(), at.getY() - 1, at.getZ(), Blocks.DARK_OAK_FENCE.getDefaultState());
         set(at.getX(), at.getY(), at.getZ(), ModBlocks.JOB_BOARD.getDefaultState().with(ThinPanelBlock.FACING, Direction.SOUTH));
+    }
+
+    /** A board fixed to a shop front at head height. Facing points away from the wall. */
+    private void onWall(BlockPos at, Direction facing, String what) {
+        registers.put(at, what);
+        set(at.getX(), at.getY(), at.getZ(), ModBlocks.JOB_BOARD.getDefaultState().with(ThinPanelBlock.FACING, facing));
+    }
+
+    /** A board on a post, out in the open. */
+    private void post(BlockPos at, Direction facing, String what) {
+        registers.put(at, what);
+        set(at.getX(), at.getY() - 1, at.getZ(), Blocks.DARK_OAK_FENCE.getDefaultState());
+        set(at.getX(), at.getY(), at.getZ(), ModBlocks.JOB_BOARD.getDefaultState().with(ThinPanelBlock.FACING, facing));
     }
 
     /** Every crossing, as x1 z1 x2 z2. */

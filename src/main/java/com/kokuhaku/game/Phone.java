@@ -38,9 +38,13 @@ public final class Phone {
     /** One message. A deleted one keeps its place in the thread; a photo carries the id of the picture each phone took. */
     private static final class Message {
         final int day, minute, photo;
-        final String from, body, sender;
+        final String body, sender;
+        /** The chat it's in: her contact's name changes, and her messages go with it. */
+        String from;
         final boolean mine, dead;
         boolean deleted;
+        /** TEXT, CALL (a missed one), LOCATION (body is the place) or VOICE (length is its seconds). */
+        int kind = TEXT, length;
 
         Message(int day, int minute, String from, String body, boolean mine, String sender, boolean dead, int photo) {
             this.day = day;
@@ -99,6 +103,46 @@ public final class Phone {
             "locker", "lies", "stay", "help", "late", "sorry");
     public static final int GHOST_MOST = 4;
 
+    /** What a message is. */
+    public static final int TEXT = 0, CALL = 1, LOCATION = 2, VOICE = 3;
+    /** The days things start: missed calls, voice messages, your location sent back to you, and her renaming herself in your phone. */
+    private static final int CALLS_FROM = 4, VOICE_FROM = 5, LOCATION_FROM = 6, HEART_FROM = 7, YOURS_FROM = 10, CLUES_FROM = 4;
+    private static final int CALL_TEXT = LATE_TEXT + 25, VOICE_TEXT = AFTER_TEXT + 80, LOCATION_TEXT = Schedule.EVENING + 20;
+    /** Rings before it gives up, and ticks between them. */
+    private static final int RINGS = 6, RING_EVERY = 50;
+    /** How close she has to be, in blocks, to show as online. */
+    private static final int ONLINE_WITHIN = 48;
+    private static final float CLUE_CHANCE = 0.35f;
+    /**
+     * Things she lets slip, true of her and nobody else's business. Never her name, her
+     * face or her hair colour: only what she does and where she goes, and only now and then.
+     */
+    private static String slip(RunState s, int her, int which) {
+        Roster.Student st = Roster.get(her);
+        return switch (which) {
+            case 0 -> switch (s.mystery().clubs[her]) {
+                case ART -> "There's paint under my nails again. It won't come off.";
+                case COOKING -> "I made too much again today. One day I'll make it just for you.";
+                case DRAMA -> "I practised what I'd say to you. I know all the lines by heart now.";
+                case KENDO -> "My hands ache tonight. I hit the practice dummy far too hard.";
+                case LITERATURE -> "I wrote about you again. Three pages. I'll read them to you one day.";
+                case MUSIC -> "I played your song four times today. Nobody else knew it was yours.";
+                case PHOTOGRAPHY -> "I spent all afternoon in the dark, watching you come up out of the paper.";
+                case TENNIS -> "My arm's so sore. I hit everything as hard as I could today.";
+            };
+            case 1 -> switch (s.mystery().districts[her]) {
+                case NORTH_HILL -> "The hill was so steep tonight. I didn't mind. I was thinking about you.";
+                case RIVERSIDE -> "The river's loud at night. It sounds like someone whispering your name.";
+                case STATION -> "The trains kept me up again. I counted them instead of sheep.";
+                case SHRINE -> "I rang the bell at the shrine for you on my way home.";
+            };
+            case 2 -> st.glasses() == Traits.Glasses.YES ? "I took my glasses off so I'd stop staring at you. It didn't help." : null;
+            case 3 -> st.length() == Traits.Length.LONG ? "My hair caught in my bag strap again. Should I cut it? Would you like it short?" : "I trimmed my fringe myself. Did you notice?";
+            default -> st.homeroom() == Traits.Homeroom.A ? "You dropped your eraser in third period. I didn't give it back." : "I can hear your class through the wall. I can always pick out your voice.";
+        };
+    }
+    private static final int SLIPS = 5;
+
     private static final List<Message> feed = new ArrayList<>();
     private static final Random RANDOM = new Random();
     private static final Map<UUID, Integer> ghostSaid = new HashMap<>();
@@ -108,6 +152,12 @@ public final class Phone {
     private static String typingIn;
     private static int typingUntil;
     private static long typingSeed;
+    /** What she's doing in it: typing, or recording a voice message. */
+    private static int typingWhat = TEXT;
+    /** Things she's let slip already; the name her contact had last; when she was last near you. */
+    private static final java.util.Set<Integer> slipped = new java.util.HashSet<>();
+    private static String lastName = UNKNOWN;
+    private static int seenDay = -1, seenMinute;
 
     private Phone() {
     }
@@ -118,6 +168,9 @@ public final class Phone {
         waiting = List.of();
         typingIn = null;
         ghostSaid.clear();
+        slipped.clear();
+        lastName = UNKNOWN;
+        seenDay = -1;
     }
 
     static int unread() {
@@ -125,7 +178,13 @@ public final class Phone {
     }
 
     private static Message receive(MinecraftServer server, RunState s, String from, String body, String sender, boolean dead, int photo) {
+        return receive(server, s, from, body, sender, dead, photo, TEXT, 0);
+    }
+
+    private static Message receive(MinecraftServer server, RunState s, String from, String body, String sender, boolean dead, int photo, int kind, int length) {
         Message m = new Message(s.day, s.minute, from, body, false, sender, dead, photo);
+        m.kind = kind;
+        m.length = length;
         feed.add(m);
         unread++;
         Kokuhaku.LOG.info("Phone: {}{}: {}", from, sender.isEmpty() ? "" : " (" + sender + ")", photo >= 0 ? "[photo] " + body : body);
@@ -135,6 +194,8 @@ public final class Phone {
         ping.writeString(body);
         ping.writeBoolean(dead);
         ping.writeBoolean(photo >= 0);
+        ping.writeVarInt(kind);
+        ping.writeBoolean(from.equals(herName(s)));
         for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
             p.playSound(SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), SoundCategory.MASTER, 0.5f, 0.6f);
             RunManager.later(6, () -> p.playSound(SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), SoundCategory.MASTER, 0.5f, 0.6f));
@@ -157,35 +218,104 @@ public final class Phone {
         type(server, s, body, -1, then);
     }
 
+    private static void type(MinecraftServer server, RunState s, String body, int photo, Runnable then) {
+        type(server, s, body, photo, TEXT, 0, then);
+    }
+
     /**
      * She types in her chat for a few seconds, on and off, then it arrives; with no body,
      * nothing ever does. Then runs once it's arrived. Now and then, a minute later, she
      * takes it back.
      */
-    private static void type(MinecraftServer server, RunState s, String body, int photo, Runnable then) {
+    private static void type(MinecraftServer server, RunState s, String body, int photo, int kind, int length, Runnable then) {
         String chat = herName(s);
         if (typingIn != null) {
             // Already typing something else: this one just arrives.
-            if (body != null) receive(server, s, chat, body, "", false, photo);
+            if (body != null) receive(server, s, chat, body, "", false, photo, kind, length);
             if (then != null) then.run();
             return;
         }
-        int ticks = body == null ? 140 + RANDOM.nextInt(160) : 80 + Math.min(160, body.length() * 3) + RANDOM.nextInt(60);
+        int ticks = kind == VOICE ? length * 20 + 20 : body == null ? 140 + RANDOM.nextInt(160) : 80 + Math.min(160, body.length() * 3) + RANDOM.nextInt(60);
         typingIn = chat;
+        typingWhat = kind;
         typingUntil = server.getTicks() + ticks;
         typingSeed = RANDOM.nextLong();
         RunManager.later(ticks, () -> {
             typingIn = null;
             if (body == null) return;
-            Message m = receive(server, s, chat, body, "", false, photo);
+            Message m = receive(server, s, chat, body, "", false, photo, kind, length);
             if (then != null) then.run();
-            if (s.day >= DELETES_FROM && photo < 0 && RANDOM.nextFloat() < DELETE_CHANCE) RunManager.later(400 + RANDOM.nextInt(800), () -> m.deleted = true);
+            if (s.day >= DELETES_FROM && photo < 0 && kind == TEXT && RANDOM.nextFloat() < DELETE_CHANCE) RunManager.later(400 + RANDOM.nextInt(800), () -> m.deleted = true);
         });
     }
 
     /** What her messages come from: a number you don't know, until you're living with her. */
     private static String herName(RunState s) {
-        return Living.active(s) ? Roster.get(s.livingWith).firstName() : UNKNOWN;
+        if (Living.active(s)) return Roster.get(s.livingWith).firstName();
+        // She's been at your phone. You never saved her number, and now it's saved twice over.
+        if (s.day >= YOURS_FROM) return "Yours ❤";
+        if (s.day >= HEART_FROM) return "❤";
+        return UNKNOWN;
+    }
+
+    /** Her contact's been renamed: every message of hers, and every one you sent her, moves with it. */
+    private static void rename(RunState s) {
+        String now = herName(s);
+        if (now.equals(lastName)) return;
+        for (Message m : feed) if (m.from.equals(lastName)) m.from = now;
+        if (lastName.equals(typingIn)) typingIn = now;
+        Kokuhaku.LOG.info("Phone: her contact is now \"{}\"", now);
+        lastName = now;
+    }
+
+    /** She called and you didn't pick up. It rang, if you were awake to hear it. */
+    private static void call(MinecraftServer server, RunState s, List<ServerPlayerEntity> living, boolean ring) {
+        String chat = herName(s);
+        if (ring) {
+            for (int r = 0; r < RINGS; r++) {
+                RunManager.later(r * RING_EVERY, () -> {
+                    for (ServerPlayerEntity p : living) {
+                        if (p.isRemoved()) continue;
+                        p.getServerWorld().playSound(null, p.getBlockPos(), SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), SoundCategory.PLAYERS, 0.7f, 1.2f);
+                        RunManager.later(5, () -> p.getServerWorld().playSound(null, p.getBlockPos(), SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), SoundCategory.PLAYERS, 0.7f, 0.95f));
+                    }
+                });
+            }
+        }
+        RunManager.later(ring ? RINGS * RING_EVERY : 0, () -> receive(server, s, chat, "Missed voice call", "", false, -1, CALL, 0));
+    }
+
+    /** Three in the morning, while you slept: one call, or a few, a minute or two apart. */
+    private static void callsInTheNight(RunState s) {
+        String chat = herName(s);
+        int calls = 1 + RANDOM.nextInt(3), at = 2 * 60 + 50 + RANDOM.nextInt(40);
+        for (int i = 0; i < calls; i++) {
+            Message m = new Message(s.day, at + i * (1 + RANDOM.nextInt(3)), chat, "Missed voice call", false, "", false, -1);
+            m.kind = CALL;
+            feed.add(m);
+            unread++;
+        }
+        Kokuhaku.LOG.info("Phone: {} missed calls in the night", calls);
+    }
+
+    /** Where you are right now, on a map, from her. */
+    private static void location(MinecraftServer server, RunState s, ServerPlayerEntity p, Town town) {
+        String where = RunManager.isHomeNow(p, s) ? "Your house" : whereYouAre(p, town);
+        if (where == null) where = "Somewhere near you";
+        else if (!where.equals("Your house")) where = where.substring(0, 1).toUpperCase() + where.substring(1);
+        type(server, s, where, -1, LOCATION, 0, null);
+    }
+
+    /** A few seconds of sound, recorded somewhere near you. */
+    private static void voice(MinecraftServer server, RunState s) {
+        type(server, s, "", -1, VOICE, 5 + RANDOM.nextInt(11), null);
+    }
+
+    /** Whether she's near enough to you to show as online, for that phone. */
+    private static boolean nearby(ServerPlayerEntity p, RunState s) {
+        if (Stalker.closeness(p) > 0) return true;
+        int her = Living.active(s) ? s.livingWith : s.freeYandere();
+        return !p.getServerWorld().getEntitiesByType(com.kokuhaku.Kokuhaku.STUDENT, p.getBoundingBox().expand(ONLINE_WITHIN), e -> e.getSkin() == her).isEmpty();
     }
 
     private static String pick(List<String> lines) {
@@ -245,6 +375,24 @@ public final class Phone {
         if (talked != null) open.add("You talked to " + talked + " today. What did she want?");
         if (RunManager.isHomeNow(p, s)) open.addAll(AT_HOME);
         else open.add(pick(s.day > 6 ? LATE_DAYS : ANY_DAY));
+        // Now and then, something true about her that she shouldn't have said.
+        if (s.day >= CLUES_FROM && RANDOM.nextFloat() < CLUE_CHANCE) {
+            List<String> slips = new ArrayList<>();
+            List<Integer> which = new ArrayList<>();
+            for (int i = 0; i < SLIPS; i++) {
+                String line = slipped.contains(i) ? null : slip(s, s.freeYandere(), i);
+                if (line != null) {
+                    slips.add(line);
+                    which.add(i);
+                }
+            }
+            if (!slips.isEmpty()) {
+                int k = RANDOM.nextInt(slips.size());
+                slipped.add(which.get(k));
+                fromHer(server, s, slips.get(k));
+                return;
+            }
+        }
         boolean ask = RANDOM.nextBoolean();
         fromHer(server, s, pick(open), () -> waiting = ask ? REPLIES : List.of());
     }
@@ -276,6 +424,19 @@ public final class Phone {
     static void minute(MinecraftServer server, RunState s, List<ServerPlayerEntity> living, Town town) {
         if (living.isEmpty() || s.day > Schedule.DAYS || s.devoted && s.minute != AFTER_TEXT) return;
         ServerPlayerEntity p = living.get(0);
+        rename(s);
+        if (nearby(p, s)) {
+            seenDay = s.day;
+            seenMinute = s.minute;
+        }
+        boolean stranger = !Living.active(s) && !Romance.datingHer(s);
+        if (s.minute == Schedule.WAKE + 2) {
+            if (Schedule.isSnowDay(s.day)) classChat(server, s, "SNOW DAY. school's shut, it's on the website", null);
+            if (stranger && s.day >= CALLS_FROM && RANDOM.nextInt(4) == 0) callsInTheNight(s);
+        }
+        if (s.minute == CALL_TEXT && stranger && s.day >= CALLS_FROM && RANDOM.nextInt(4) == 0) call(server, s, living, true);
+        if (s.minute == VOICE_TEXT && stranger && s.day >= VOICE_FROM && RANDOM.nextInt(4) == 0) voice(server, s);
+        if (s.minute == LOCATION_TEXT && stranger && s.day >= LOCATION_FROM && RANDOM.nextInt(4) == 0) location(server, s, p, town);
         if (s.minute == Festival.INVITE_TEXT && s.day == Festival.DAY - 1) classChat(server, s, "festival tomorrow!! everyone's getting the 9am train from chinetsu station, come", null);
         if (s.minute == LUNCH_TEXT && Schedule.isSchoolDay(s.day) && !Living.active(s)) chat(server, s);
         if (s.minute == AFTER_TEXT) hers(server, s, p, town);
@@ -308,6 +469,10 @@ public final class Phone {
         }
         unsendOneOfYours();
         receive(server, s, CHAT, pick(FROM_THE_DEAD), "Aiko S.", false, -1);
+        receive(server, s, herName(s), "Missed voice call", "", false, -1, CALL, 0);
+        receive(server, s, herName(s), "Your house", "", false, -1, LOCATION, 0);
+        receive(server, s, herName(s), "", "", false, -1, VOICE, 9);
+        receive(server, s, herName(s), slip(s, s.freeYandere(), 1), "", false, -1);
         receive(server, s, CHAT, "behind you she is watching", "", true, -1);
     }
 
@@ -342,6 +507,8 @@ public final class Phone {
             e.putBoolean("Deleted", m.deleted);
             e.putBoolean("Dead", m.dead);
             e.putInt("Photo", m.deleted ? -1 : m.photo);
+            e.putInt("Kind", m.deleted ? TEXT : m.kind);
+            e.putInt("Length", m.length);
             messages.add(e);
         }
         nbt.put("Messages", messages);
@@ -349,6 +516,8 @@ public final class Phone {
         for (Reply r : waiting) replies.add(NbtString.of(r.label()));
         nbt.put("Replies", replies);
         nbt.putString("ReplyIn", herName(s));
+        nbt.putString("Her", herName(s));
+        nbt.putString("HerStatus", nearby(p, s) ? "online" : seenDay < 0 ? "" : (seenDay == s.day ? "last seen today at " : seenDay == s.day - 1 ? "last seen yesterday at " : "last seen day " + seenDay + " at ") + Schedule.clock(seenMinute));
         nbt.putInt("Unread", fresh);
         nbt.putBoolean("Devoted", s.devoted);
         nbt.putFloat("Watched", Chase.secondsLeft(p) >= 0 ? 1f : Stalker.closeness(p));
@@ -357,6 +526,7 @@ public final class Phone {
             nbt.putString("TypingIn", typingIn);
             nbt.putInt("TypingFor", left * 50);
             nbt.putLong("TypingSeed", typingSeed);
+            nbt.putInt("TypingWhat", typingWhat);
         }
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeNbt(nbt);

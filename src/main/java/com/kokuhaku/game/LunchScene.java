@@ -259,9 +259,11 @@ final class LunchScene {
         ServerPlayerEntity p = c.player;
         if (meal != null) {
             s.yen -= meal.price();
+            Body.eat(p, s, 150 + meal.price(), 150);
             ordered[MEALS.indexOf(meal)]++;
             s.markDirty();
         }
+        if (meal == null) Body.eat(p, s, 0, 300);
         String reply = meal == null ? "Water. And they wonder why you're all so pale. Here." : meal.reply();
         StudentEntity cook = LunchHall.cook();
         p.getServerWorld().playSound(null, BlockPos.ofFloored(COUNTER_X, FLOOR, COUNTER_Z), SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.PLAYERS, 0.5f, 1.3f);

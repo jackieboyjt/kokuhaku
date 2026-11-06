@@ -32,6 +32,8 @@ public final class ClientRun {
     /** Called back from the room: nothing can touch you now, and nothing listens to you either. */
     public static boolean ghost = false;
     public static int yen = 0;
+    /** How fed and watered you are, 0 to 1000. */
+    public static int food = 1000, water = 1000;
     /** What you're carrying on a tray, if anything. */
     public static net.minecraft.item.ItemStack tray = null;
     public static int locker = 0;

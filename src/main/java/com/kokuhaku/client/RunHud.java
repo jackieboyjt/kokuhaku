@@ -83,6 +83,24 @@ public final class RunHud {
         m.pop();
     }
 
+    private static final int NEED_W = 60, NEED_LOW = 250, NEED_EMPTY = 60;
+
+    /** A thin bar, right-aligned under the money, with its name beside it. Low, it turns red and blinks. */
+    private static void renderNeed(DrawContext context, TextRenderer tr, String label, int value, int w, int y, int colour) {
+        int x2 = w - 8, x1 = x2 - NEED_W;
+        boolean low = value < NEED_LOW, blink = value < NEED_EMPTY && System.currentTimeMillis() / 400 % 2 == 0;
+        int fill = low ? 0xFFD01C30 : colour;
+        context.fill(x1 - 1, y - 1, x2 + 1, y + 4, 0xA0000000);
+        if (!blink) context.fill(x1, y, x1 + NEED_W * MathHelper.clamp(value, 0, 1000) / 1000, y + 3, fill);
+        Text name = KokuhakuClient.menuText(label);
+        var m = context.getMatrices();
+        m.push();
+        m.translate(x1 - 4 - tr.getWidth(name) * 0.75f, y - 1.5f, 0);
+        m.scale(0.75f, 0.75f, 1f);
+        context.drawTextWithShadow(tr, name, 0, 0, low ? 0xFFD01C30 : 0xFF9A9AA2);
+        m.pop();
+    }
+
     public static void render(DrawContext context, float tickDelta) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!ClientRun.active || client.options.hudHidden || MenuScene.isActive()) {
@@ -107,9 +125,13 @@ public final class RunHud {
         }
         Text money = KokuhakuClient.menuText(ClientRun.yen < 0 ? "-¥" + (-ClientRun.yen) : "¥" + ClientRun.yen);
         if (free) context.drawTextWithShadow(tr, money, w - tr.getWidth(money) - 8, 32, ClientRun.yen < 0 ? 0xFFD01C30 : 0xFFD8B860);
+        if (free && !ClientRun.ghost) {
+            renderNeed(context, tr, "Food", ClientRun.food, w, 45, 0xFFD8A060);
+            renderNeed(context, tr, "Water", ClientRun.water, w, 55, 0xFF6FB6E8);
+        }
         if (free && ClientRun.unread > 0) {
             Text phone = KokuhakuClient.menuText("Phone (" + KeyBindings.PHONE.getBoundKeyLocalizedText().getString() + "): " + ClientRun.unread + " new");
-            context.drawTextWithShadow(tr, phone, w - tr.getWidth(phone) - 8, 44, 0xFFE0283C);
+            context.drawTextWithShadow(tr, phone, w - tr.getWidth(phone) - 8, 67, 0xFFE0283C);
         }
 
         if (free && !ClientRun.objective.isEmpty()) {

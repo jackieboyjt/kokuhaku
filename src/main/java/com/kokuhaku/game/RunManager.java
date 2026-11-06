@@ -205,6 +205,7 @@ public final class RunManager {
         Favours.clear();
         Shadow.clear();
         Phone.clear();
+        Clothes.clear();
         Teachers.clear();
         Festival.clear();
         TrainRide.clear();
@@ -771,6 +772,15 @@ public final class RunManager {
             Shop.open(player, s);
             return ActionResult.SUCCESS;
         }
+        String board = town.registers.get(pos);
+        if (board != null && board.startsWith("food:")) {
+            Eateries.open(player, s, board.substring(5));
+            return ActionResult.SUCCESS;
+        }
+        if ("clothes".equals(board)) {
+            Clothes.open(player, s);
+            return ActionResult.SUCCESS;
+        }
         if (Favours.pickedUp(player, pos)) return ActionResult.SUCCESS;
         if (town.registers.containsKey(pos)) {
             Talk.say(player, town.registers.get(pos).startsWith("club") ? "Club register" : "Residents' board", Sleuthing.read(s, town.registers.get(pos)), Talk.leave("Noted."));
@@ -980,6 +990,7 @@ public final class RunManager {
 
     public static void tick(MinecraftServer server) {
         RunState s = state(server);
+        Schedule.snowSeed = s.started ? s.seed : 0;
         Railway.tick(server, players(server));
         if (!s.started) {
             if (partyChanged) {
@@ -1119,6 +1130,8 @@ public final class RunManager {
         Teachers.update(server, s, town);
         Festival.minute(server, s, living(server), town);
         Phone.minute(server, s, living(server), town);
+        Body.minute(s, living(server));
+        Clothes.minute(server, s);
         if (!transitioning && lessonPending.isEmpty() && !living(server).isEmpty() && !WalkScene.active(living(server).get(0))) {
             Scenarios.tick(living(server).get(0), s);
             for (ServerPlayerEntity p : living(server)) overhear(p, s, all);
@@ -1625,7 +1638,7 @@ public final class RunManager {
             }
         }
         if (living(server).isEmpty()) return;
-        Romance.night(s);
+        Romance.night(server, s);
         String death = maybeDeath(server, s);
         if (!death.isEmpty()) nightNews.add(death);
         String habit = Habits.night(s);
@@ -1698,6 +1711,8 @@ public final class RunManager {
             trail.put(drop.at(), drop.text());
             nightNews.add(drop.hint());
         }
+        Body.morning(s, living(server));
+        if (Schedule.weekday(s.day) == 0 && s.day > 1 && !Kept.on(s) && !Living.active(s)) s.yen += POCKET_MONEY;
         server.getOverworld().setTimeOfDay(Schedule.worldTime(s.day, s.minute));
         for (ServerPlayerEntity p : living(server)) wakeUp(p, s);
     }
@@ -1725,11 +1740,12 @@ public final class RunManager {
         later(WAKE_TICKS + 4, () -> {
             transitioning = false;
             int left = Schedule.DAYS - s.day;
-            String sub = s.day > Schedule.DAYS ? "" : Schedule.WEEKDAYS[Schedule.weekday(s.day)] + (Schedule.isSchoolDay(s.day) ? "" : "  ·  No school today") + "  ·  " + (left == 0 ? "Last day" : left + (left == 1 ? " day left" : " days left"));
+            String sub = s.day > Schedule.DAYS ? "" : Schedule.WEEKDAYS[Schedule.weekday(s.day)] + (Schedule.isSnowDay(s.day) ? "  ·  Snow day: the school's shut" : Schedule.isSchoolDay(s.day) ? "" : "  ·  No school today") + "  ·  " + (left == 0 ? "Last day" : left + (left == 1 ? " day left" : " days left"));
             if ((s.day - 1) % 3 == 0 && s.day <= Schedule.DAYS) {
                 String[] chapter = CHAPTERS[(s.day - 1) / 3];
                 announce(p, chapter[0], chapter[1], 0);
             }
+            if (Schedule.weekday(s.day) == 0 && s.day > 1 && !Kept.on(s) && !Living.active(s)) announce(p, "", "Pocket money on the kitchen table: ¥" + POCKET_MONEY + ". It has to last the week.", 0);
             if (Festival.on(s)) announce(p, "The School Festival", "No lessons. The whole school's on the sports field. Fireworks at 19:00.", 0);
             Turning.morning(p, s);
             if (s.day == 1) Radio.place(p, homeOf(s, p));
@@ -1964,6 +1980,7 @@ public final class RunManager {
         Devotion.spent(player, s);
         player.addStatusEffect(new StatusEffectInstance(d.effect, 20 * 60, 0, false, false));
         if (d == Drink.GREEN_TEA) Kept.boughtTea(player, s);
+        Body.eat(player, s, d == Drink.COLA ? 40 : 0, 300);
         announce(player, "", d.label + ". " + d.description, 0);
         sendState(player, s);
     }
@@ -2359,6 +2376,7 @@ public final class RunManager {
         }
         if (Living.caught(player, s, who)) return;
         if (who.female() && !isHer) Whispers.talkedTo(s, who.id());
+        if (who.female()) Romance.talked(s, who.id());
         if (isHer) Shadow.saw(s, "You stopped to talk to her. She went over every word that night.");
         if (who.female()) {
             int window = Questions.window(s.day, s.minute);
@@ -2412,14 +2430,15 @@ public final class RunManager {
             return;
         } else if (option < optionsFor(s, who).size() && GIVE_SWEETS.equals(optionsFor(s, who).get(option))) {
             s.gifts--;
-            s.fondness[studentId] = Math.min(5, s.fondness[studentId] + SWEETS_FONDNESS);
+            // From someone she barely knows, a present is a bit much.
+            s.fondness[studentId] = Math.min(5, s.fondness[studentId] + (s.talkDays[studentId] >= 2 ? SWEETS_FONDNESS : 1));
             s.markDirty();
             line = "For me? ...You really didn't have to. Thank you.";
         } else if (option < optionsFor(s, who).size() && Romance.NICE.equals(optionsFor(s, who).get(option))) {
             Romance.compliment(player, s, who, students(player.server).stream().filter(e -> e.getSkin() == studentId).findFirst().orElse(null));
             return;
-        } else if (option < optionsFor(s, who).size() && optionsFor(s, who).get(option).equals(Romance.option(s, who))) {
-            Romance.talk(player, s, who);
+        } else if (option < optionsFor(s, who).size() && Romance.handles(optionsFor(s, who).get(option))) {
+            Romance.choose(player, s, who, optionsFor(s, who).get(option));
             return;
         } else if (option == Dialogue.TRUST) {
             List<Integer> others = new ArrayList<>();
@@ -2551,7 +2570,7 @@ public final class RunManager {
     }
 
     private static final String GIVE_SWEETS = "Give her a box of sweets.";
-    private static final int SWEETS_FONDNESS = 3;
+    private static final int SWEETS_FONDNESS = 2;
 
     private static void sendDialogue(ServerPlayerEntity player, Student who, String line) {
         sendDialogue(player, who, line, optionsFor(state(player.server), who));
@@ -2565,8 +2584,7 @@ public final class RunManager {
         options.add(options.size() - 1, Romance.NICE);
         if (Confront.canSay(s, who)) options.add(options.size() - 1, Confront.OPTION);
         if (s.gifts > 0) options.add(options.size() - 1, GIVE_SWEETS);
-        String extra = Romance.option(s, who);
-        if (extra != null) options.add(options.size() - 1, extra);
+        for (String line : Romance.options(s, who)) options.add(options.size() - 1, line);
         return options;
     }
 
@@ -2817,7 +2835,11 @@ public final class RunManager {
         return Math.min(100, (int) d);
     }
 
+    /** What your parents leave out every Monday. */
+    private static final int POCKET_MONEY = 2000;
+
     private static void sendState(ServerPlayerEntity player, RunState s) {
+        Schedule.snowSeed = s.started ? s.seed : 0;
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeVarInt(s.day);
         buf.writeVarInt(s.minute);
@@ -2838,6 +2860,8 @@ public final class RunManager {
         buf.writeVarInt(Phone.unread());
         buf.writeVarInt(Chase.secondsLeft(player));
         buf.writeBoolean(Chase.slowing(player));
+        buf.writeVarInt(Body.food(s, player));
+        buf.writeVarInt(Body.water(s, player));
         ServerPlayNetworking.send(player, Net.STATE, buf);
     }
 
@@ -3175,6 +3199,7 @@ public final class RunManager {
             case "date" -> {
                 int girl = Roster.active(1).stream().filter(i -> Roster.get(i).female() && !s.mystery().isYandere(i)).findFirst().orElseThrow();
                 s.fondness[girl] = 3;
+                Romance.devReady(s, girl);
                 s.minute = Schedule.AFTER_SCHOOL + 30;
                 for (StudentEntity e : students(p.server)) {
                     if (e.getSkin() != girl) continue;

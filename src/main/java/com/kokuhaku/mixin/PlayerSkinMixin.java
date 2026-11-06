@@ -15,8 +15,9 @@ public class PlayerSkinMixin {
     @Inject(method = "getSkinTexture", at = @At("HEAD"), cancellable = true)
     private void kokuhaku$skin(CallbackInfoReturnable<Identifier> cir) {
         if (StudentSkins.ownSkin) return;
-        if ((Object) this instanceof ClientPlayerEntity) cir.setReturnValue(StudentSkins.YOU);
-        else cir.setReturnValue(StudentSkins.classmate(((AbstractClientPlayerEntity) (Object) this).getUuid()));
+        java.util.UUID id = ((AbstractClientPlayerEntity) (Object) this).getUuid();
+        Identifier base = (Object) this instanceof ClientPlayerEntity ? StudentSkins.YOU : StudentSkins.classmate(id);
+        cir.setReturnValue(com.kokuhaku.client.OutfitSkins.dress(id, base));
     }
 
     @Inject(method = "getModel", at = @At("HEAD"), cancellable = true)

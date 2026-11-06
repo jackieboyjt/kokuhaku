@@ -80,6 +80,20 @@ public class RunState extends PersistentState {
     public final Set<Integer> pages = new LinkedHashSet<>();
     /** Things in your bag that aren't part of the mystery's own clues. */
     public final List<String> notes = new ArrayList<>();
+    /** How fed and watered each player is, by slot, 0 to 1000. */
+    public final int[] food = new int[Roster.MAX_PARTY], water = new int[Roster.MAX_PARTY];
+    /** What each player wears out of school, and the clothes they own (one bit each), by slot. */
+    public final int[] outfit = new int[Roster.MAX_PARTY], wardrobe = new int[Roster.MAX_PARTY];
+    /** Getting to know a girl: how many days you've talked, the last of them, times you've hung out and the last, when you can ask her again, how often she's said no. */
+    public final int[] talkDays = new int[Roster.TOTAL], lastTalk = new int[Roster.TOTAL], hangouts = new int[Roster.TOTAL], hungOutOn = new int[Roster.TOTAL], askAgain = new int[Roster.TOTAL], turnedDown = new int[Roster.TOTAL];
+
+    /** Fed and watered: where everyone starts the run. */
+    public static final int FULL = 1000;
+
+    {
+        java.util.Arrays.fill(food, FULL);
+        java.util.Arrays.fill(water, FULL);
+    }
 
     private Mystery mystery;
 
@@ -134,6 +148,16 @@ public class RunState extends PersistentState {
         NbtList written = new NbtList();
         for (String note : notes) written.add(NbtString.of(note));
         nbt.put("Notes", written);
+        nbt.putIntArray("Food", food);
+        nbt.putIntArray("Water", water);
+        nbt.putIntArray("Outfit", outfit);
+        nbt.putIntArray("Wardrobe", wardrobe);
+        nbt.putIntArray("TalkDays", talkDays);
+        nbt.putIntArray("LastTalk", lastTalk);
+        nbt.putIntArray("Hangouts", hangouts);
+        nbt.putIntArray("HungOutOn", hungOutOn);
+        nbt.putIntArray("AskAgain", askAgain);
+        nbt.putIntArray("TurnedDown", turnedDown);
         nbt.putIntArray("Dead", dead.stream().mapToInt(Integer::intValue).toArray());
         nbt.putIntArray("AtScene", atScene.stream().mapToInt(Integer::intValue).toArray());
         nbt.putInt("Status", status.ordinal());
@@ -158,6 +182,9 @@ public class RunState extends PersistentState {
         RunState s = this;
         for (java.util.Collection<?> c : List.of(party, found, known, accused, caught, dead, atScene, scenarios, pages, notes)) c.clear();
         java.util.Arrays.fill(fondness, 0);
+        for (int[] a : new int[][]{outfit, wardrobe, talkDays, lastTalk, hangouts, hungOutOn, askAgain, turnedDown}) java.util.Arrays.fill(a, 0);
+        java.util.Arrays.fill(food, FULL);
+        java.util.Arrays.fill(water, FULL);
         java.util.Arrays.fill(lockers, 0);
         java.util.Arrays.fill(doorLocked, false);
         mystery = null;
@@ -196,6 +223,16 @@ public class RunState extends PersistentState {
         for (int i : nbt.getIntArray("Scenarios")) s.scenarios.add(i);
         for (int i : nbt.getIntArray("Pages")) s.pages.add(i);
         for (NbtElement note : nbt.getList("Notes", NbtElement.STRING_TYPE)) s.notes.add(note.asString());
+        copy(nbt, "Food", food);
+        copy(nbt, "Water", water);
+        copy(nbt, "Outfit", outfit);
+        copy(nbt, "Wardrobe", wardrobe);
+        copy(nbt, "TalkDays", talkDays);
+        copy(nbt, "LastTalk", lastTalk);
+        copy(nbt, "Hangouts", hangouts);
+        copy(nbt, "HungOutOn", hungOutOn);
+        copy(nbt, "AskAgain", askAgain);
+        copy(nbt, "TurnedDown", turnedDown);
         for (int i : nbt.getIntArray("Dead")) s.dead.add(i);
         for (int i : nbt.getIntArray("AtScene")) s.atScene.add(i);
         s.status = Status.values()[nbt.getInt("Status")];
@@ -206,5 +243,12 @@ public class RunState extends PersistentState {
         for (int i : nbt.getIntArray("Known")) s.known.add(i);
         for (int i : nbt.getIntArray("Accused")) s.accused.add(i);
         for (int i : nbt.getIntArray("Caught")) s.caught.add(i);
+    }
+
+    /** A saved array over this one, if the save has it: older saves keep the defaults. */
+    private static void copy(NbtCompound nbt, String key, int[] into) {
+        if (!nbt.contains(key)) return;
+        int[] saved = nbt.getIntArray(key);
+        System.arraycopy(saved, 0, into, 0, Math.min(saved.length, into.length));
     }
 }

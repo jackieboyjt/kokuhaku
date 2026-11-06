@@ -124,7 +124,7 @@ final class Stalker {
     }
 
     private static float dayChance(RunState s) {
-        return s.day * CHANCE_A_DAY * (s.minute >= Schedule.EVENING ? EVENING_FACTOR : 1f) * Habits.stalking(s);
+        return s.day * CHANCE_A_DAY * (s.minute >= Schedule.EVENING ? EVENING_FACTOR * Clothes.darkFactor(s) : 1f) * Habits.stalking(s);
     }
 
     static void tick(RunState s, List<ServerPlayerEntity> players, Town town, boolean playing, int ticks) {

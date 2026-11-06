@@ -57,6 +57,8 @@ public final class Net {
     public static final Identifier PHONE_PING = id("phone_ping");
     /** Photograph yourself from behind for her, as picture number id. */
     public static final Identifier PHOTO_TAKE = id("photo_take");
+    /** Server to client: what each player in the run is wearing right now. */
+    public static final Identifier OUTFITS = id("outfits");
 
     // Client -> server
     /** A ghost's words for the class chat: count, then each word's place in Phone.GHOST_WORDS. */

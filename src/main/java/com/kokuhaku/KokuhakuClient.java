@@ -108,6 +108,8 @@ public class KokuhakuClient implements ClientModInitializer {
         HudRenderCallback.EVENT.register(RunHud::render);
         HudRenderCallback.EVENT.register(com.kokuhaku.client.PhoneBanner::render);
         ClientTickEvents.END_CLIENT_TICK.register(com.kokuhaku.client.PhotoAlbum::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(com.kokuhaku.client.Snowfall::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(com.kokuhaku.client.VoicePlayer::tick);
         WorldRenderEvents.END.register(context -> com.kokuhaku.client.PhotoAlbum.frameDrawn());
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -247,14 +249,18 @@ public class KokuhakuClient implements ClientModInitializer {
             int unread = buf.readVarInt();
             int chase = buf.readVarInt();
             boolean slowing = buf.readBoolean();
+            int food = buf.readVarInt(), water = buf.readVarInt();
             client.execute(() -> {
                 ClientRun.chase = chase;
                 ClientRun.slowing = slowing;
+                ClientRun.food = food;
+                ClientRun.water = water;
                 ClientRun.unread = unread;
                 ClientRun.target = target;
                 ClientRun.dread = dread;
                 ClientRun.temper = temper;
                 ClientRun.week = week;
+                com.kokuhaku.game.Schedule.snowSeed = status == RunState.Status.PLAYING ? week : 0;
                 ClientRun.objective = objective;
                 ClientRun.party = party;
                 ClientRun.alive = alive;
@@ -289,11 +295,25 @@ public class KokuhakuClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(Net.PHONE_PING, (client, handler, buf, sender) -> {
             String chat = buf.readString(), from = buf.readString(), body = buf.readString();
             boolean dead = buf.readBoolean(), photo = buf.readBoolean();
-            client.execute(() -> com.kokuhaku.client.PhoneBanner.show(chat, from, body, dead, photo));
+            int kind = buf.readVarInt();
+            boolean hers = buf.readBoolean();
+            client.execute(() -> com.kokuhaku.client.PhoneBanner.show(chat, from, body, dead, photo, kind, hers));
         });
         ClientPlayNetworking.registerGlobalReceiver(Net.PHOTO_TAKE, (client, handler, buf, sender) -> {
             int id = buf.readVarInt();
             client.execute(() -> com.kokuhaku.client.PhotoAlbum.request(id));
+        });
+        ClientPlayNetworking.registerGlobalReceiver(Net.OUTFITS, (client, handler, buf, sender) -> {
+            int n = buf.readVarInt();
+            java.util.UUID[] who = new java.util.UUID[n];
+            int[] what = new int[n];
+            for (int i = 0; i < n; i++) {
+                who[i] = buf.readUuid();
+                what[i] = buf.readVarInt();
+            }
+            client.execute(() -> {
+                for (int i = 0; i < n; i++) com.kokuhaku.client.OutfitSkins.set(who[i], what[i]);
+            });
         });
         ClientPlayNetworking.registerGlobalReceiver(Net.PHONE, (client, handler, buf, sender) -> {
             NbtCompound nbt = buf.readNbt();

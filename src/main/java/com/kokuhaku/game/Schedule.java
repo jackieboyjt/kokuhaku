@@ -54,7 +54,30 @@ public final class Schedule {
     }
 
     public static boolean isSchoolDay(int day) {
-        return weekday(day) < 5;
+        return weekday(day) < 5 && !isSnowDay(day);
+    }
+
+    /**
+     * The run's seed, for the snow: set by the server when a run is under way and by the
+     * client when it hears about one. Zero means no run, and no snow.
+     */
+    public static volatile long snowSeed = 0;
+    /** About one run in three gets a snow day, and some of those get two in a row. Never the first day or the festival. */
+    private static final int SNOW_IN_100 = 35, SECOND_IN_100 = 30;
+
+    /** It snowed in the night and the school's shut. Worked out from the seed, so everyone agrees. */
+    public static boolean isSnowDay(int day) {
+        String forced = System.getenv("KOKUHAKU_SNOW");
+        if (forced != null) return Integer.toString(day).equals(forced);
+        long seed = snowSeed;
+        if (seed == 0 || weekday(day) >= 5) return false;
+        Random r = new Random(seed * 0x9E3779B97F4A7C15L ^ 0x534E4F57L);
+        if (r.nextInt(100) >= SNOW_IN_100) return false;
+        List<Integer> could = new ArrayList<>();
+        for (int d = 2; d < DAYS; d++) if (weekday(d) < 5 && d != Festival.DAY && d != Festival.DAY - 1) could.add(d);
+        int first = could.get(r.nextInt(could.size()));
+        boolean second = r.nextInt(100) < SECOND_IN_100 && weekday(first + 1) < 5 && first + 1 != Festival.DAY - 1 && first + 1 < DAYS;
+        return day == first || second && day == first + 1;
     }
 
     /** Subjects for a weekday (0-4), or an empty list at weekends. Every seed makes a different week. */

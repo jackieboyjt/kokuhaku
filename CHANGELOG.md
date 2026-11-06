@@ -3,6 +3,22 @@
 Kokuhaku runs on Minecraft 1.20.1 (Fabric), launched through Prism Launcher.
 Versions before 1.3.0 weren't tagged at the time; their entries were written up afterwards.
 
+## 1.4.3 — 7 November 2026
+
+### New
+- **Food and water.** Two bars under your money run down through the day, water faster than food. Eat breakfast at home, lunch at school, buy drinks from the machines, or eat in town. Run low and you slow down; run out and you can barely stand.
+- **Places to eat in town.** Ramen Kazu on the shopping street, a soba stand by the station and a café on the beach. Each has its own menu, prices and opening hours, and sitting down to eat takes a while.
+- **Pocket money.** ¥2,000 on the kitchen table every Monday. It has to last the week.
+- **Clothes.** Kimura Clothing on the shopping street sells five outfits. You change into yours after school and at weekends. Something smart helps on a date, and the long black coat makes you hard to follow after dark.
+- **Snow days.** Some runs it snows in the night and the school shuts for the day, or two.
+- **Getting a girlfriend is much harder, as it is in real life.** She has to know you, so talk to her on different days, not just a lot on one. Hang out as friends first. Ask too soon and she says no, the whole class hears about it, and you can't ask again for days; a second no is final. Some girls only ever want to be friends, and nothing tells you which. Once you're together, keep talking to her, or she'll end it.
+- **More on the phone.** Missed calls in the night, and some that ring while you're awake. Voice messages you can play. Your location, sent back to you. Her contact renames itself. She shows as online when she's close, and "last seen" when she isn't. And now and then she lets something slip about herself.
+- Screenshots on the GitHub page.
+
+### Changed
+- A box of sweets means less from someone she barely knows.
+- Compliments only win her over once she knows you.
+
 ## 1.4.2 — 6 November 2026
 
 ### New

@@ -57,14 +57,14 @@ public final class Routines {
         if (!Schedule.isSchoolDay(s.day)) {
             int out = WEEKEND_OUT + daily.nextInt(150), back = WEEKEND_BACK + daily.nextInt(120);
             if (m < out || m >= back) return home(id, s, town);
-            return scattered("hangout", Rain.now(s) ? UNDER_A_ROOF[friends.nextInt(UNDER_A_ROOF.length)] : HANGOUTS[friends.nextInt(HANGOUTS.length)], town, daily, 6);
+            return scattered("hangout", Rain.indoors(s) ? UNDER_A_ROOF[friends.nextInt(UNDER_A_ROOF.length)] : HANGOUTS[friends.nextInt(HANGOUTS.length)], town, daily, 6);
         }
         if (m < leaveHome || m >= goHome || People.stayingHome(s, id)) return home(id, s, town);
-        if (m >= Schedule.AFTER_SCHOOL) return Rain.now(s) && s.mystery().clubs[id] == Club.TENNIS ? scattered("club", "gym", town, daily, 3) : club(s.mystery().clubs[id], town, daily);
+        if (m >= Schedule.AFTER_SCHOOL) return Rain.indoors(s) && s.mystery().clubs[id] == Club.TENNIS ? scattered("club", "gym", town, daily, 3) : club(s.mystery().clubs[id], town, daily);
         if (m >= Schedule.LUNCH && m < Schedule.PERIOD_START[4]) {
             Town.LunchSeat place = LunchHall.seatFor(id, s, town);
             if (place != null) return new Target("lunch", place.node(), Vec3d.ofBottomCenter(place.chair()), place.yaw());
-            String[] spots = Rain.now(s) ? new String[]{"foyer"} : new String[]{"courtyard_w", "courtyard_e"};
+            String[] spots = Rain.indoors(s) ? new String[]{"foyer"} : new String[]{"courtyard_w", "courtyard_e"};
             return scattered("yard", spots[friends.nextInt(spots.length)], town, daily, 3);
         }
         int group = group(st);

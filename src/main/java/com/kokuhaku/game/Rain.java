@@ -22,8 +22,14 @@ final class Rain {
         was = false;
     }
 
+    /** Weather that keeps people under a roof: rain, or a snow day. */
+    static boolean indoors(RunState s) {
+        return now(s) || Schedule.isSnowDay(s.day);
+    }
+
     static boolean now(RunState s) {
         if (Festival.on(s)) return false;
+        if (Schedule.isSnowDay(s.day)) return false;
         if ("1".equals(System.getenv("KOKUHAKU_RAIN"))) return true;
         Random today = new Random(s.seed ^ s.day * 19937L);
         if (today.nextInt(100) >= RAINY_IN_100) return false;

@@ -4,6 +4,7 @@ import com.kokuhaku.client.ClientRun;
 import com.kokuhaku.client.GhostGlyphs;
 import com.kokuhaku.client.KeyBindings;
 import com.kokuhaku.client.PhotoAlbum;
+import com.kokuhaku.client.VoicePlayer;
 import com.kokuhaku.game.Phone;
 import com.kokuhaku.game.Schedule;
 import com.kokuhaku.net.Net;
@@ -69,7 +70,7 @@ public class PhoneScreen extends Screen {
      * notice for a body; dead is a ghost's, mostly lost letters for the living; photo is the
      * picture's number, or -1.
      */
-    private record Msg(int index, int day, String clock, String from, String body, boolean mine, String sender, boolean deleted, int photo, boolean dead) {
+    private record Msg(int index, int day, String clock, String from, String body, boolean mine, String sender, boolean deleted, int photo, boolean dead, int kind, int length) {
     }
 
     /** How many letters in a hundred of a ghost's message the living lose. */
@@ -102,6 +103,12 @@ public class PhoneScreen extends Screen {
     private NbtList messages;
     private List<String> replies = List.of();
     private String replyIn = "";
+    /** Her chat, whatever she's calling herself in your phone today, and whether she's online. */
+    private String her = UNKNOWN, herStatus = "";
+    private int typingWhat;
+    /** Where the chat was drawn last frame, to find what a click lands on. */
+    private int drawnTop, drawnOffset;
+    private static final int VOICE_H = 18, VOICE_W = 108;
     private boolean devoted;
     private float watched;
 
@@ -159,6 +166,9 @@ public class PhoneScreen extends Screen {
         messages = data.getList("Messages", NbtElement.COMPOUND_TYPE);
         replies = data.getList("Replies", NbtElement.STRING_TYPE).stream().map(NbtElement::asString).toList();
         replyIn = data.getString("ReplyIn");
+        her = data.contains("Her") ? data.getString("Her") : UNKNOWN;
+        herStatus = data.getString("HerStatus");
+        typingWhat = data.getInt("TypingWhat");
         devoted = data.getBoolean("Devoted");
         watched = data.getFloat("Watched");
         typingChat = data.contains("TypingIn") ? data.getString("TypingIn") : null;
@@ -194,7 +204,7 @@ public class PhoneScreen extends Screen {
             else if (dead && !ghost()) body = GhostGlyphs.scramble(raw, seed, DEAD_LOST);
             else body = GhostGlyphs.filter(raw, seed);
             String sender = dead ? "Unknown" : GhostGlyphs.filter(m.getString("Sender"), m.getString("Sender").hashCode());
-            Msg msg = new Msg(i, m.getInt("Day"), clock, from, body, mine, sender, deleted, m.contains("Photo") ? m.getInt("Photo") : -1, dead);
+            Msg msg = new Msg(i, m.getInt("Day"), clock, from, body, mine, sender, deleted, m.contains("Photo") ? m.getInt("Photo") : -1, dead, m.getInt("Kind"), m.getInt("Length"));
             Chat chat = byName.computeIfAbsent(from, Chat::new);
             chat.msgs.add(msg);
             chat.last = i;
@@ -252,6 +262,11 @@ public class PhoneScreen extends Screen {
     }
 
     /** She's typing in the chat open in front of you. */
+    /** What she's doing in there: typing, or recording something. */
+    private String typingLabel() {
+        return (typingWhat == Phone.VOICE ? "recording audio" : "typing") + ELLIPSIS;
+    }
+
     private boolean typing() {
         return open != null && typingIn(open.name);
     }
@@ -335,14 +350,16 @@ public class PhoneScreen extends Screen {
         r.tail = tail;
         r.y = y;
         // A deleted one is a grey notice in italics behind a no-entry sign.
-        int indent = m.deleted() ? 9 : 0;
+        // A deleted one, and a missed call, have an icon before the words.
+        int indent = m.deleted() || m.kind() == Phone.CALL ? 9 : 0;
         Text body = m.deleted() ? Text.literal(m.body()).formatted(Formatting.ITALIC) : Text.literal(m.body());
-        r.lines = m.body().isEmpty() ? List.of() : textRenderer.wrapLines(body, BUBBLE_MAX - indent);
-        boolean photo = m.photo() >= 0;
+        r.lines = m.body().isEmpty() || m.kind() == Phone.VOICE ? List.of() : textRenderer.wrapLines(body, BUBBLE_MAX - indent);
+        boolean photo = picture(m);
         if (r.lines.isEmpty() && !photo) r.lines = List.of(OrderedText.EMPTY);
-        int widest = photo ? PHOTO_W : 0;
+        int picW = m.kind() == Phone.VOICE ? VOICE_W : PHOTO_W;
+        int widest = photo ? picW : 0;
         for (OrderedText l : r.lines) widest = Math.max(widest, textRenderer.getWidth(l) + indent);
-        int last = r.lines.isEmpty() ? PHOTO_W : textRenderer.getWidth(r.lines.get(r.lines.size() - 1)) + indent;
+        int last = r.lines.isEmpty() ? picW : textRenderer.getWidth(r.lines.get(r.lines.size() - 1)) + indent;
         r.metaW = smallWidth(m.clock()) + (m.mine() && !m.deleted() ? 10 : 0);
         // Over a photo with no caption, the time sits on the picture's corner.
         r.inlineMeta = !r.lines.isEmpty() && last + META_GAP + r.metaW <= BUBBLE_MAX;
@@ -350,11 +367,25 @@ public class PhoneScreen extends Screen {
         r.named = r.tail && !m.mine() && !m.sender().isEmpty();
         if (r.named) textW = Math.max(textW, smallWidth(m.sender()));
         r.w = textW + PAD_X * 2;
-        r.h = PAD_Y * 2 + (r.named ? metaH() + 3 : 0) + (photo ? PHOTO_H + (r.lines.isEmpty() ? 0 : 3) : 0)
-                + (r.lines.isEmpty() ? 0 : r.lines.size() * LINE - 1) + (r.inlineMeta || photo && r.lines.isEmpty() ? 0 : metaH() + 2);
+        boolean voice = m.kind() == Phone.VOICE;
+        r.h = PAD_Y * 2 + (r.named ? metaH() + 3 : 0) + (photo ? pictureH(m) + (r.lines.isEmpty() ? 0 : 3) : 0)
+                + (r.lines.isEmpty() ? 0 : r.lines.size() * LINE - 1) + (r.inlineMeta || photo && r.lines.isEmpty() && !voice ? 0 : metaH() + 2);
         r.x = m.mine() ? SR - 7 - r.w : SX + 7;
         rows.add(r);
         return r.h;
+    }
+
+    /** Something drawn above the words: a photo, a map, or a voice message's player. */
+    private static boolean picture(Msg m) {
+        return !m.deleted() && (m.photo() >= 0 || m.kind() == Phone.LOCATION || m.kind() == Phone.VOICE);
+    }
+
+    private static int pictureH(Msg m) {
+        return m.kind() == Phone.VOICE ? VOICE_H : PHOTO_H;
+    }
+
+    private boolean isHer(Chat c) {
+        return c.name.equals(her);
     }
 
     private static String dayLabel(int day) {
@@ -502,6 +533,17 @@ public class PhoneScreen extends Screen {
                 return true;
             }
         }
+        // A voice message: tap it to play, or to stop it.
+        if (y >= bodyTop && y < bodyBottom) {
+            for (Row r : rows) {
+                if (r.kind != Row.BUBBLE || r.msg.kind() != Phone.VOICE || r.msg.deleted()) continue;
+                int top = drawnTop + r.y - drawnOffset + PAD_Y + (r.named ? metaH() + 3 : 0);
+                if (x >= r.x && x < r.x + r.w && y >= top && y < top + VOICE_H) {
+                    VoicePlayer.toggle(r.msg.index(), r.msg.index() * 7919L + r.msg.length() + r.msg.day(), r.msg.length());
+                    return true;
+                }
+            }
+        }
         List<String> chips = chips();
         for (int i = 0; i < chips.size(); i++) {
             int[] c = chipBox(chips.get(i), i);
@@ -642,7 +684,7 @@ public class PhoneScreen extends Screen {
             }
             ctx.drawText(textRenderer, name, SX + 33, cy - 8, TEXT, false);
             boolean typing = typing();
-            String sub = burst && g > 0.6f ? "watching" : typing ? "typing" + ELLIPSIS : subtitle(open);
+            String sub = burst && g > 0.6f ? "watching" : typing ? typingLabel() : subtitle(open);
             drawSmall(ctx, GhostGlyphs.filter(sub, sub.hashCode()), SX + 33, cy + 3, typing ? GREEN : META);
         }
         for (int i = 0; i < 3; i++) ctx.fill(SR - 8, cy - 4 + i * 3, SR - 6, cy - 2 + i * 3, TEXT);
@@ -657,7 +699,7 @@ public class PhoneScreen extends Screen {
     }
 
     private String subtitle(Chat c) {
-        if (c.name.equals(UNKNOWN)) return "online";
+        if (isHer(c)) return herStatus;
         if (c.name.equals(CLASS_CHAT)) return "29 participants";
         if (c.lastIncoming < 0) return "";
         Msg last = null;
@@ -689,17 +731,18 @@ public class PhoneScreen extends Screen {
             int whenW = smallWidth(when);
             drawSmall(ctx, when, SR - 7 - whenW, y + 7, fresh > 0 ? GREEN : META);
             int x = SX + 32;
-            ctx.drawText(textRenderer, trim(c.shown, SR - 11 - whenW - x), x, y + 5, c.name.equals(UNKNOWN) ? 0xFFF0A0A8 : TEXT, false);
+            ctx.drawText(textRenderer, trim(c.shown, SR - 11 - whenW - x), x, y + 5, isHer(c) ? 0xFFF0A0A8 : TEXT, false);
             int px = x;
             if (typingIn(c.name)) {
-                drawSmall(ctx, GhostGlyphs.filter("typing" + ELLIPSIS, 4), px, y + 18, GREEN);
+                drawSmall(ctx, GhostGlyphs.filter(typingLabel(), 4), px, y + 18, GREEN);
             } else {
                 if (last.mine() && !last.deleted()) {
                     ticks(ctx, px, y + 18, tickState(c, last));
                     px += 11;
                 }
                 String who = last.mine() || last.sender().isEmpty() ? "" : last.sender() + ": ";
-                String what = last.photo() >= 0 ? GhostGlyphs.filter("Photo", 5) + (last.body().isEmpty() ? "" : " " + last.body()) : last.body();
+                String what = last.photo() >= 0 ? GhostGlyphs.filter("Photo", 5) + (last.body().isEmpty() ? "" : " " + last.body())
+                        : last.kind() == Phone.LOCATION ? GhostGlyphs.filter("Location", 6) : last.kind() == Phone.VOICE ? GhostGlyphs.filter("Voice message (0:" + String.format("%02d", last.length()) + ")", 7) : last.body();
                 drawSmall(ctx, trimSmall(who + what, SR - 22 - px), px, y + 18, META);
             }
             if (fresh > 0) {
@@ -730,6 +773,8 @@ public class PhoneScreen extends Screen {
         int maxScroll = Math.max(0, total - view);
         scroll = MathHelper.clamp(scroll, 0, maxScroll);
         int offset = maxScroll - (int) scroll;
+        drawnTop = top;
+        drawnOffset = offset;
         scissor(ctx, SX, top, SR, bottom);
         for (Row r : rows) {
             int y = top + r.y - offset;
@@ -855,14 +900,19 @@ public class PhoneScreen extends Screen {
             drawSmall(ctx, m.sender(), x + PAD_X, ly, nameCol);
             ly += metaH() + 3;
         }
-        boolean picture = m.photo() >= 0;
+        boolean picture = picture(m), voice = m.kind() == Phone.VOICE;
         if (picture) {
-            drawPhoto(ctx, m.photo(), x + PAD_X, ly);
-            ly += PHOTO_H + 3;
+            if (voice) drawVoice(ctx, m, x + PAD_X, ly);
+            else if (m.kind() == Phone.LOCATION) drawMap(ctx, m, x + PAD_X, ly);
+            else drawPhoto(ctx, m.photo(), x + PAD_X, ly);
+            ly += pictureH(m) + 3;
         }
         int indent = 0;
         if (m.deleted()) {
             noEntry(ctx, x + PAD_X + 3, ly + 3);
+            indent = 9;
+        } else if (m.kind() == Phone.CALL) {
+            handset(ctx, x + PAD_X, ly, HER);
             indent = 9;
         }
         for (OrderedText l : r.lines) {
@@ -870,7 +920,7 @@ public class PhoneScreen extends Screen {
             ly += LINE;
         }
         int metaX = x2 - PAD_X - r.metaW, metaY = y + r.h - PAD_Y - metaH();
-        if (picture && r.lines.isEmpty()) {
+        if (picture && r.lines.isEmpty() && !voice) {
             // On the picture's corner, over a dark patch so it reads.
             metaY -= 2;
             ctx.fill(metaX - 2, metaY - 1, x2 - PAD_X, metaY + metaH() + 1, 0x80000000);
@@ -891,6 +941,61 @@ public class PhoneScreen extends Screen {
         ctx.fill(x + PHOTO_W / 2 - 8, y + PHOTO_H / 2 - 4, x + PHOTO_W / 2 + 8, y + PHOTO_H / 2 + 6, 0xFF2A3942);
         ctx.fill(x + PHOTO_W / 2 - 3, y + PHOTO_H / 2 - 6, x + PHOTO_W / 2 + 3, y + PHOTO_H / 2 - 4, 0xFF2A3942);
         circle(ctx, x + PHOTO_W / 2, y + PHOTO_H / 2 + 1, 3, 0xFF111A20);
+    }
+
+    /**
+     * Her location: a scrap of street map, dark, with roads crossing it and a red pin in the
+     * middle. The streets are made up from the place's name, so the same place looks the same.
+     */
+    private void drawMap(DrawContext ctx, Msg m, int x, int y) {
+        ctx.fill(x, y, x + PHOTO_W, y + PHOTO_H, 0xFF1E2A26);
+        Random r = new Random(m.body().hashCode());
+        for (int i = 0; i < 9; i++) {
+            int bx = x + r.nextInt(PHOTO_W - 14), by = y + r.nextInt(PHOTO_H - 10);
+            ctx.fill(bx, by, bx + 8 + r.nextInt(14), by + 6 + r.nextInt(10), 0xFF26352F);
+        }
+        for (int i = 0; i < 3; i++) {
+            int ry = y + 6 + r.nextInt(PHOTO_H - 12);
+            ctx.fill(x, ry, x + PHOTO_W, ry + 2, 0xFF3D4C47);
+            int rx = x + 6 + r.nextInt(PHOTO_W - 12);
+            ctx.fill(rx, y, rx + 2, y + PHOTO_H, 0xFF3D4C47);
+        }
+        int cx = x + PHOTO_W / 2, cy = y + PHOTO_H / 2;
+        // A soft ring where it thinks you are, and the pin.
+        circle(ctx, cx, cy + 4, 9, 0x3053BDEB);
+        circle(ctx, cx, cy - 4, 5, HER);
+        circle(ctx, cx, cy - 4, 2, 0xFF5A1820);
+        for (int i = 0; i < 6; i++) ctx.fill(cx - 3 + i / 2, cy + i, cx + 3 - i / 2, cy + i + 1, HER);
+        drawSmall(ctx, "Live location", x + 3, y + 3, TEXT);
+    }
+
+    /** A voice message: play or pause, the waveform, filled as far as it's played, and how long it is. */
+    private void drawVoice(DrawContext ctx, Msg m, int x, int y) {
+        boolean on = VoicePlayer.playing() == m.index();
+        int cy = y + VOICE_H / 2;
+        if (on) {
+            ctx.fill(x + 3, cy - 4, x + 5, cy + 4, TEXT);
+            ctx.fill(x + 7, cy - 4, x + 9, cy + 4, TEXT);
+        } else {
+            for (int i = 0; i < 8; i++) ctx.fill(x + 3 + i, cy - 4 + i / 2, x + 4 + i, cy + 4 - i / 2, TEXT);
+        }
+        Random r = new Random(m.index() * 31L + m.length());
+        int left = x + 15, bars = (VOICE_W - 40) / 3, done = on ? (int) (bars * VoicePlayer.progress()) : -1;
+        for (int i = 0; i < bars; i++) {
+            int h = 2 + r.nextInt(9);
+            ctx.fill(left + i * 3, cy - h / 2, left + i * 3 + 2, cy + h / 2 + 1, i <= done ? BLUE : META);
+        }
+        String time = "0:" + String.format("%02d", m.length());
+        drawSmall(ctx, time, x + VOICE_W - smallWidth(time) - 2, cy - metaH() / 2, META);
+    }
+
+    /** A telephone handset, tipped over: a missed call. */
+    private static void handset(DrawContext ctx, int x, int y, int col) {
+        ctx.fill(x, y + 1, x + 3, y + 4, col);
+        ctx.fill(x + 4, y + 1, x + 7, y + 4, col);
+        ctx.fill(x + 1, y + 2, x + 6, y + 3, col);
+        ctx.fill(x + 2, y + 5, x + 5, y + 6, col);
+        ctx.fill(x + 4, y + 4, x + 5, y + 5, col);
     }
 
     /** A circle with a line through it: what's left of a deleted message. */
@@ -926,13 +1031,13 @@ public class PhoneScreen extends Screen {
     }
 
     private void avatar(DrawContext ctx, Chat c, int cx, int cy, int r, boolean tiny) {
-        int col = c.name.equals(UNKNOWN) ? 0xFF5A1820 : AVATARS[Math.floorMod(c.name.hashCode(), AVATARS.length)];
+        int col = isHer(c) ? 0xFF5A1820 : AVATARS[Math.floorMod(c.name.hashCode(), AVATARS.length)];
         circle(ctx, cx, cy, r, col);
-        String label = c.name.equals(UNKNOWN) ? "?" : c.name.startsWith("Class ") ? c.name.substring(6).replace("-", "") : c.name.substring(0, 1).toUpperCase();
+        String label = c.name.equals(UNKNOWN) ? "?" : isHer(c) ? "❤" : c.name.startsWith("Class ") ? c.name.substring(6).replace("-", "") : c.name.substring(0, 1).toUpperCase();
         if (tiny) {
             drawSmall(ctx, label, cx - smallWidth(label) / 2, cy - metaH() / 2, TEXT);
         } else {
-            ctx.drawText(textRenderer, label, cx - textRenderer.getWidth(label) / 2, cy - 3, c.name.equals(UNKNOWN) ? HER : TEXT, false);
+            ctx.drawText(textRenderer, label, cx - textRenderer.getWidth(label) / 2, cy - 3, isHer(c) ? HER : TEXT, false);
         }
     }
 

@@ -52,9 +52,9 @@ public class HowToPlayScreen extends Screen {
                     new Card(BAT, "Alone", "Stay where people can see you, above all after dark. If she gets hold of you, press the keys as they appear."),
                     new Card(HOUSE, "The roads", "Cross at the white lines when the lights are red for the cars: they stop there. Anywhere else, they won't. A car or train means hospital on Easy and Medium, and worse on anything harder.")),
             new Page("Money and people",
-                    new Card(CLOCK, "Work", "Job boards pay for a shift, and coworkers gossip. The shop boards sell a door chain, pepper spray and sweets."),
+                    new Card(CLOCK, "Money, food and clothes", "Eat and drink or you slow down: lunch, vending machines, and places in town with their own hours. Jobs pay; you get pocket money on Mondays. Clothes go on after school."),
                     new Card(TALK, "Favours", "Ask people if they need a hand. Find what they've lost for money and what they know."),
-                    new Card(TALK, "Going out", "Say something nice: each girl wants to hear one thing. Once she likes you, you can ask her out. She walks you to school from then on."),
+                    new Card(TALK, "Going out", "It takes time. Talk to her on different days, hang out as friends, then ask. Too soon and she says no. Some only want to be friends. Ignore her and she leaves."),
                     new Card(CALENDAR, "The School Festival", "Day 13. Take the train from Chinetsu Station, try the stalls, and choose carefully who you watch the fireworks with.")),
     };
 

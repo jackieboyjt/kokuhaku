@@ -1,5 +1,6 @@
 package com.kokuhaku.client;
 
+import com.kokuhaku.game.Phone;
 import com.kokuhaku.screen.PhoneScreen;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -17,16 +18,18 @@ public final class PhoneBanner {
     private static final int CARD = 0xFF202C33, TEXT = 0xFFE9EDEF, META = 0xFF8696A0, GREEN = 0xFF00A884, HER = 0xFFF0A0A8;
 
     private static String from = "", line = "";
+    private static boolean fromHer;
     private static long since = -1;
 
     private PhoneBanner() {
     }
 
     /** From the server: who, who in the group, what, whether it's from the dead, whether it's a photo. */
-    public static void show(String chat, String sender, String body, boolean dead, boolean photo) {
+    public static void show(String chat, String sender, String body, boolean dead, boolean photo, int kind, boolean hers) {
         from = GhostGlyphs.filter(chat, chat.hashCode());
+        fromHer = hers;
         String who = dead ? "Unknown: " : sender.isEmpty() ? "" : sender + ": ";
-        String what = photo ? "Photo" : dead && !ClientRun.ghost ? GhostGlyphs.scramble(body, body.hashCode(), PhoneScreen.DEAD_LOST) : GhostGlyphs.filter(body, body.hashCode());
+        String what = photo ? "Photo" : kind == Phone.LOCATION ? "Location: " + body : kind == Phone.VOICE ? "Voice message" : dead && !ClientRun.ghost ? GhostGlyphs.scramble(body, body.hashCode(), PhoneScreen.DEAD_LOST) : GhostGlyphs.filter(body, body.hashCode());
         line = who + what;
         since = System.currentTimeMillis();
     }
@@ -62,7 +65,7 @@ public final class PhoneBanner {
         ctx.fill(cx - 6, cy + 4, cx - 3, cy + 7, GREEN);
         String key = KeyBindings.PHONE.getBoundKeyLocalizedText().getString();
         String hint = "Phone (" + key + ")";
-        ctx.drawText(tr, tr.trimToWidth(from, WIDE - 40 - tr.getWidth(hint)), x + 25, y + 5, from.startsWith("Unknown") ? HER : TEXT, false);
+        ctx.drawText(tr, tr.trimToWidth(from, WIDE - 40 - tr.getWidth(hint)), x + 25, y + 5, fromHer ? HER : TEXT, false);
         ctx.drawText(tr, hint, x + WIDE - 6 - tr.getWidth(hint), y + 5, META, false);
         String shownLine = tr.getWidth(line) > WIDE - 32 ? tr.trimToWidth(line, WIDE - 32 - tr.getWidth("…")) + "…" : line;
         ctx.drawText(tr, shownLine, x + 25, y + 17, META, false);
