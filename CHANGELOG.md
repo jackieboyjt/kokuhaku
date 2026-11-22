@@ -71,7 +71,7 @@ Versions before 1.3.0 weren't tagged at the time; their entries were written up 
 - A ghost called back after being taken was left stuck in her room's chair.
 - The film at the end ran off the bottom of the screen.
 - Skipping the walk to school left the camera walking the empty route.
-- The launcher couldn't start the game while any other Minecraft was open, and Prism windows it hid could stay hidden for good.
+- The launcher took any other Minecraft window for its own game and gave up. Now it only counts the game it started. If Prism is already running another game, it says so instead of doing nothing. Prism windows it hid could also stay hidden for good.
 - The diary cut long subject names short.
 - About three hundred smaller things besides: wrong text, numbers that didn't match, things that happened twice or not at all, and things in multiplayer that happened to the wrong person.
 
