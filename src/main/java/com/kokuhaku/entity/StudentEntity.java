@@ -753,6 +753,10 @@ public class StudentEntity extends PathAwareEntity {
         if (hand != Hand.MAIN_HAND) {
             return ActionResult.PASS;
         }
+        // A figure in a corner or down the street is not someone you can talk to.
+        if (getPeek() != 0) {
+            return ActionResult.PASS;
+        }
         if (player instanceof ServerPlayerEntity sp && RunManager.isRun(sp.server)) {
             talkingTicks = 20 * 15;
             listeningTo = sp;

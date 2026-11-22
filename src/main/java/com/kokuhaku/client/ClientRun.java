@@ -4,8 +4,6 @@ import com.kokuhaku.Difficulty;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.HashSet;
-import java.util.Set;
 
 /** What the client knows about the current run, kept up to date by the server. */
 public final class ClientRun {
@@ -44,8 +42,6 @@ public final class ClientRun {
     /** How many started the run, and how many are still alive. */
     public static int party = 1, alive = 1;
     public static Difficulty difficulty = Difficulty.EASY;
-    /** Girls you've crossed off on the suspect board. Only a note to yourself; the server doesn't care. */
-    public static final Set<Integer> crossed = new HashSet<>();
 
     private static final Deque<Announcement> queue = new ArrayDeque<>();
     private static Announcement current;
@@ -58,9 +54,15 @@ public final class ClientRun {
         active = false;
         party = 1;
         alive = 1;
-        crossed.clear();
+        com.kokuhaku.screen.BagScreen.forget();
         queue.clear();
         current = null;
+        // The server sends these again when you come back; the tray it doesn't, so it goes.
+        tray = null;
+        food = water = 1000;
+        chase = -1;
+        temper = -1;
+        ghost = false;
     }
 
     public static void announce(Announcement a) {

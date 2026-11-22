@@ -2,7 +2,10 @@ package com.kokuhaku.client;
 
 import com.kokuhaku.block.LockerBlock;
 import com.kokuhaku.block.ModBlocks;
+import com.kokuhaku.block.ThinPanelBlock;
 import com.kokuhaku.entity.StudentEntity;
+import com.kokuhaku.game.Body;
+import com.kokuhaku.game.Drink;
 import com.kokuhaku.game.Festival;
 import com.kokuhaku.game.Lessons;
 import com.kokuhaku.game.RunManager;
@@ -19,6 +22,7 @@ import com.kokuhaku.screen.LessonScreen;
 import com.kokuhaku.screen.MenuButton;
 import com.kokuhaku.screen.PhoneScreen;
 import com.kokuhaku.screen.ReelScreen;
+import com.kokuhaku.screen.VendingScreen;
 import com.kokuhaku.screen.WalkScreen;
 import com.kokuhaku.world.town.Town;
 import net.minecraft.block.BlockState;
@@ -91,6 +95,11 @@ public final class DevBot {
     private static BlockPos lockerPos;
     private static int waitedToCross = 0, circles = 0, headedFor = 0;
     private static final int EVEN_THE_STRIPES = -1000, INDOORS = 40;
+
+    // Eating: when it last went for something, so a shut place or an empty purse doesn't keep it walking back and forth.
+    private static int fedTriedAt = -999;
+    private static final int PECKISH = 350, TRY_AGAIN = 45;
+    private static final String[] VENDING = {"foyer", "station", "shops", "park", "beach"};
 
     private DevBot() {
     }
@@ -207,8 +216,8 @@ public final class DevBot {
         long fits = java.util.stream.IntStream.range(0, Roster.girlsFor(s.party.size())).filter(g -> !s.dead.contains(g) && !s.caught.contains(g) && s.mystery().stillFits(g, s.found)).count();
         int fond = 0;
         for (int g = 0; g < Roster.girlsFor(s.party.size()); g++) fond = Math.max(fond, s.fondness[g]);
-        log("=== DAY %d %s: yen %d, marks %d, clues %d, notes %d, profiles %d, still fit %d, guesses %d, dead %d, dating %d, gifts %d, pages %d, her fondness %d, best %d",
-                s.day, Schedule.WEEKDAYS[Schedule.weekday(s.day)], s.yen, s.strikes, s.found.size(), s.notes.size(), s.known.size(), fits, s.guessesLeft, s.dead.size(), s.dating, s.gifts, s.pages.size(), s.fondness[s.freeYandere()], fond);
+        log("=== DAY %d %s: yen %d, marks %d, clues %d, notes %d, profiles %d, still fit %d, guesses %d, dead %d, dating %d, gifts %d, pages %d, her fondness %d, best %d, food %d, water %d",
+                s.day, Schedule.WEEKDAYS[Schedule.weekday(s.day)], s.yen, s.strikes, s.found.size(), s.notes.size(), s.known.size(), fits, s.guessesLeft, s.dead.size(), s.dating, s.gifts, s.pages.size(), s.fondness[s.freeYandere()], fond, Body.food(s, sp), Body.water(s, sp));
         if (fits == 1 && soleSuspectOn == 0) soleSuspectOn = s.day;
         DevShots.take();
     }
@@ -242,6 +251,7 @@ public final class DevBot {
         else if (sc instanceof LessonScreen) lesson(sc);
         else if (sc instanceof BagScreen) bag(c, sc, s);
         else if (sc instanceof PhoneScreen) phone(sc);
+        else if (sc instanceof VendingScreen) vending(sc);
         else if (sc instanceof EndScreen) {
             if (said++ == 0) log("END: %s", String.join(" / ", (String[]) get(sc, "lines")));
             endSeen = now;
@@ -307,6 +317,7 @@ public final class DevBot {
     private static int choose(String name, String line, List<String> options, RunState s) {
         int last = options.size() - 1;
         if (options.equals(com.kokuhaku.game.Questions.ANSWERS)) return RANDOM.nextInt(10) < 7 ? 0 : 1;
+        if (name.equals("Ramen Kazu") || name.equals("Station Soba") || name.equals("Umi no Ie")) return dish(options, s);
         if (find(options, "Goodbye.") >= 0) {
             int give = find(options, "Give");
             if (give >= 0 && s.gifts > 0) return give;
@@ -331,6 +342,31 @@ public final class DevBot {
             }
         }
         return RANDOM.nextInt(10) < 6 ? 0 : RANDOM.nextInt(options.size());
+    }
+
+    /** The first thing on the menu there's money for. Mains come first, and the water's free. */
+    private static int dish(List<String> options, RunState s) {
+        for (int i = 0; i < options.size(); i++) {
+            String o = options.get(i);
+            int at = o.indexOf("(¥");
+            int price = at < 0 ? 0 : Integer.parseInt(o.substring(at + 2, o.indexOf(')', at)));
+            if (price <= Math.max(0, s.yen)) return i;
+        }
+        return options.size() - 1;
+    }
+
+    /** Cola's a bit of food as well; tea if that's all there's money for. */
+    private static void vending(Screen sc) {
+        if (System.currentTimeMillis() - screenSince < 600) return;
+        List<MenuButton> b = buttons(sc);
+        for (Drink d : new Drink[]{Drink.COLA, Drink.GREEN_TEA}) {
+            if (d.ordinal() < b.size() - 1 && b.get(d.ordinal()).active) {
+                log("Bought %s", d.label);
+                click(sc, b.get(d.ordinal()));
+                return;
+            }
+        }
+        click(sc, b.get(b.size() - 1));
     }
 
     private static void lesson(Screen sc) {
@@ -508,6 +544,7 @@ public final class DevBot {
             }
         }
         if (lockerDue && locker(c, me, s, town)) return;
+        if (eat(c, me, sp, s, town)) return;
         if (Festival.on(s)) {
             festival(c, me, s, town);
             return;
@@ -600,6 +637,76 @@ public final class DevBot {
             return true;
         }
         goStraightTo(c, me, "locker " + s.lockers[0], lockerPos);
+        return true;
+    }
+
+    /** When it opens, when last orders are, and the cheapest proper meal. */
+    private static int[] eatery(String key) {
+        return switch (key) {
+            case "soba" -> new int[]{6 * 60, 21 * 60 - 10, 160};
+            case "ramen" -> new int[]{11 * 60, 22 * 60 - 25, 380};
+            case "beach" -> new int[]{10 * 60, 18 * 60 - 20, 400};
+            default -> null;
+        };
+    }
+
+    /** Hungry or thirsty: the nearest place that's open and sells it, if there's the money. */
+    private static boolean eat(MinecraftClient c, ClientPlayerEntity me, ServerPlayerEntity sp, RunState s, Town town) {
+        int food = Body.food(s, sp), water = Body.water(s, sp), now = s.day * 24 * 60 + s.minute;
+        if ((food >= PECKISH && water >= PECKISH) || now - fedTriedAt < TRY_AGAIN) return false;
+        BlockPos best = null;
+        String bestName = "";
+        double bestDist = Double.MAX_VALUE;
+        if (food < PECKISH) {
+            for (var e : town.registers.entrySet()) {
+                if (!e.getValue().startsWith("food:")) continue;
+                String key = e.getValue().substring(5);
+                int[] hours = eatery(key);
+                if (hours == null || s.minute < hours[0] || s.minute >= hours[1] || s.yen < hours[2]) continue;
+                if (key.equals("beach") && Schedule.isSnowDay(s.day)) continue;
+                double dist = me.getPos().squaredDistanceTo(Vec3d.ofCenter(e.getKey()));
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = e.getKey();
+                    bestName = "eat at " + key;
+                }
+            }
+        }
+        // Nowhere open to eat, or it's only a drink you want: a vending machine.
+        BlockPos node = null;
+        if (best == null && s.yen >= Drink.GREEN_TEA.price) {
+            for (String place : VENDING) {
+                BlockPos p = town.graph.pos(town.place(place));
+                BlockPos machine = place.equals("foyer") ? p.add(3, 0, -3) : p.add(2, 0, 2);
+                double dist = me.getPos().squaredDistanceTo(Vec3d.ofCenter(machine));
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = machine;
+                    node = p;
+                    bestName = "the vending machine at " + place;
+                }
+            }
+        }
+        if (best == null) {
+            fedTriedAt = now;
+            log("Hungry (food %d, water %d) but nowhere open and ¥%d", food, water, s.yen);
+            return false;
+        }
+        if (bestDist < 25) {
+            release(c);
+            fedTriedAt = now;
+            log("Going for something: %s, food %d, water %d, ¥%d", bestName, food, water, s.yen);
+            use(c, me, best);
+            return true;
+        }
+        if (node != null) {
+            walkTo(c, me, bestName, node);
+            return true;
+        }
+        // Stand in front of the board, on the pavement.
+        BlockState b = c.world.getBlockState(best);
+        Direction facing = b.contains(ThinPanelBlock.FACING) ? b.get(ThinPanelBlock.FACING) : Direction.NORTH;
+        goStraightTo(c, me, bestName, best.offset(facing).down());
         return true;
     }
 

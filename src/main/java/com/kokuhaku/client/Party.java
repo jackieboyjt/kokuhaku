@@ -26,11 +26,14 @@ public final class Party {
 
     private static final String E4MC_DOMAIN = "text.e4mc_minecraft.domainAssigned";
     private static final String E4MC_ERROR = "text.e4mc_minecraft.error";
+    /** e4mc doesn't always say when it gives up, so we stop waiting after this long. */
+    private static final long INVITE_TIMEOUT_MS = 30_000;
 
     public static List<Member> members = List.of();
     /** Your invite code, once there is one. */
     public static String code = "";
     public static boolean inviting = false;
+    private static long invitedAt;
     /** What went wrong last, for the menu to show. */
     public static String error = "";
 
@@ -62,7 +65,18 @@ public final class Party {
             return;
         }
         if (local) code = "localhost:" + port;
-        else inviting = true;
+        else {
+            inviting = true;
+            invitedAt = System.currentTimeMillis();
+        }
+    }
+
+    /** Gives up on an invite e4mc never answered, so the button can be pressed again. */
+    public static void tick() {
+        if (inviting && System.currentTimeMillis() - invitedAt > INVITE_TIMEOUT_MS) {
+            inviting = false;
+            error = "Couldn't make an invite. Check your connection.";
+        }
     }
 
     /** Leaves your own menu room and walks into a friend's. */
@@ -80,6 +94,7 @@ public final class Party {
         if (content.getKey().equals(E4MC_DOMAIN)) {
             code = domainIn(content);
             inviting = false;
+            error = ""; // it may come in after we gave up on it
             return true;
         }
         if (content.getKey().equals(E4MC_ERROR)) {

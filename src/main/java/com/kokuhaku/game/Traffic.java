@@ -259,6 +259,8 @@ public final class Traffic {
         }
 
         boolean night = Townsfolk.night(RunManager.state(server).minute);
+        // Snow on the roads: everyone drives slower.
+        boolean snow = Schedule.isSnowDay(RunManager.state(server).day);
         for (int i = 0; i < cars.size(); i++) {
             Car car = cars.get(i);
             if (car.body.isRemoved()) continue;
@@ -270,7 +272,7 @@ public final class Traffic {
                 move(car);
             }
             if (car.parkedUp) continue;
-            double wanted = car.lane.cruise;
+            double wanted = car.lane.cruise * (snow ? 0.7 : 1);
             if (heading.dotProduct(car.lane.heading(car.distance + 9)) < 0.85) wanted = Math.min(wanted, TURN_SPEED);
             double gap = gapToOtherCars(i, car, pos, heading);
             wanted = Math.min(wanted, gap);
@@ -283,6 +285,9 @@ public final class Traffic {
                 car.stuck = 0;
                 car.pushing = PUSH_TICKS;
             }
+            // A car on a walk route drives on to clear it, but still stops for anyone in its way and at the lights.
+            boolean walking = !walks.isEmpty(), clearing = walking && onAWalk(pos);
+            if (clearing) wanted = car.lane.cruise * (snow ? 0.7 : 1);
             if (pedestrianAhead(world, pos, heading)) {
                 if (car.waited++ < PATIENCE) wanted = 0;
             } else {
@@ -291,9 +296,7 @@ public final class Traffic {
             // The lights, and anyone on the stripes: brake to stop at the line.
             double toTheLine = Crossings.stopAhead(pos, heading);
             if (toTheLine >= 0) wanted = Math.min(wanted, toTheLine < 0.4 ? 0 : Math.min(car.lane.cruise, toTheLine * LINE_EASE));
-            boolean walking = !walks.isEmpty();
-            if (walking && onAWalk(pos)) wanted = car.lane.cruise;
-            else if (walking || parked || RunManager.scenePlaying() || sceneNear(players, pos) || Railway.blocksCrossing(pos.add(heading.multiply(CROSSING_LOOKAHEAD)))) wanted = 0;
+            if (!clearing && (walking || parked || RunManager.scenePlaying() || sceneNear(players, pos) || Railway.blocksCrossing(pos.add(heading.multiply(CROSSING_LOOKAHEAD))))) wanted = 0;
             double change = wanted - car.speed;
             car.speed += MathHelper.clamp(change, walking ? -STOPPING_FOR_A_WALK : -BRAKING, ACCELERATION);
             car.distance = (car.distance + car.speed) % car.lane.length();

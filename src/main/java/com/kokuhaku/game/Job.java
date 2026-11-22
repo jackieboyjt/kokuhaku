@@ -2,7 +2,7 @@ package com.kokuhaku.game;
 
 /** Part-time work: a shift skips ahead and pays, and coworkers gossip about one of the girls. */
 public enum Job {
-    KONBINI("Grocery Store", "Scan shopping at the till. Customers hate mistakes.", 1000, 3),
+    KONBINI("Konbini", "Scan shopping at the till. Customers hate mistakes.", 1000, 3),
     KIOSK("Station Kiosk", "Sell tickets and snacks at the train station.", 900, 2),
     LIBRARY("Library Aide", "Shelve returns in the school library.", 800, 2);
 

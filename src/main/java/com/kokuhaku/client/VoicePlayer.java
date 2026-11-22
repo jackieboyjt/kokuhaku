@@ -40,16 +40,24 @@ public final class VoicePlayer {
         ticks = 0;
     }
 
+    /** Cuts it off, as when you leave. */
+    public static void stop() {
+        playing = -1;
+        ticks = 0;
+    }
+
     private static void play(SoundEvent sound, float pitch, float volume) {
         MinecraftClient.getInstance().getSoundManager().play(PositionedSoundInstance.master(sound, pitch, volume));
     }
 
     public static void tick(MinecraftClient client) {
         if (playing < 0) return;
-        if (ticks >= length * 20) {
+        if (client.world == null || ticks >= length * 20) {
             playing = -1;
             return;
         }
+        // It waits while the game is paused.
+        if (client.isPaused()) return;
         Random r = new Random(seed + ticks);
         switch ((int) Math.floorMod(seed, 3L)) {
             // Footsteps, yours, from a few steps back. Then they stop.

@@ -59,12 +59,17 @@ public class DialogueScreen extends Screen {
         return !options.isEmpty() && width >= WIDE_ENOUGH;
     }
 
+    /** Half the stacked box. Narrower on a small screen, so nothing hangs off the edge. */
+    private int half() {
+        return width >= 360 ? 180 : width / 2 - 6;
+    }
+
     private int boxLeft() {
-        return width / 2 - (sideBySide() ? WIDE_ENOUGH / 2 - 8 : 180);
+        return width / 2 - (sideBySide() ? WIDE_ENOUGH / 2 - 8 : half());
     }
 
     private int boxRight() {
-        return width / 2 + (sideBySide() ? WIDE_ENOUGH / 2 - 8 : 180);
+        return width / 2 + (sideBySide() ? WIDE_ENOUGH / 2 - 8 : half());
     }
 
     private int textWidth() {
@@ -89,7 +94,7 @@ public class DialogueScreen extends Screen {
     protected void init() {
         lookAtThem();
         int row = rowHeight();
-        int x = sideBySide() ? boxLeft() + TEXT_COLUMN + 16 : width / 2 - 170;
+        int x = sideBySide() ? boxLeft() + TEXT_COLUMN + 16 : boxLeft() + 10;
         int wide = sideBySide() ? boxRight() - x - 4 : 260;
         int y = sideBySide() ? boxTop() + 6 : height - 16 - options.size() * row;
         for (int i = 0; i < options.size(); i++) {
@@ -114,6 +119,12 @@ public class DialogueScreen extends Screen {
         buf.writeVarInt(student);
         buf.writeVarInt(option);
         ClientPlayNetworking.send(Net.CHOOSE, buf);
+    }
+
+    /** The game's waiting on your answer: Esc won't make the question go away. A line with nothing to answer still closes. */
+    @Override
+    public boolean shouldCloseOnEsc() {
+        return !driven || options.isEmpty();
     }
 
     @Override

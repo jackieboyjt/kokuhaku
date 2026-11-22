@@ -2,6 +2,7 @@ package com.kokuhaku.game;
 
 import com.kokuhaku.Kokuhaku;
 import com.kokuhaku.game.Roster.Student;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 import java.util.ArrayList;
@@ -44,6 +45,27 @@ public final class Accomplice {
         name = p.getGameProfile().getName();
         on = true;
         Kokuhaku.LOG.info("The accomplice is {}", name);
+    }
+
+    /**
+     * Back from a save, here yet or not: it's still them. The leads they'd already left
+     * stay used up. Only how many is kept, as the leads themselves are in the bag.
+     */
+    static void restore(UUID id, String savedName, int leads, int day) {
+        who = id;
+        name = savedName.isEmpty() ? "One of you" : savedName;
+        on = true;
+        plantedOn = day;
+        planted.clear();
+        for (int i = 0; i < Math.min(leads, LEADS); i++) planted.add("");
+        Kokuhaku.LOG.info("The accomplice is still {}, {} leads planted", name, planted.size());
+    }
+
+    /** What a save needs to put them back. */
+    static void write(NbtCompound save) {
+        save.putString("AccompliceName", name);
+        save.putInt("AccompliceLeads", planted.size());
+        save.putInt("AccomplicePlantedOn", plantedOn);
     }
 
     static boolean is(ServerPlayerEntity p) {

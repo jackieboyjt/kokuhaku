@@ -16,8 +16,10 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -40,6 +42,9 @@ final class SkiSlope {
     private static final double SKI_STEP = 2.0, CARVE_STEP = 0.24, UPHILL = 12, STRAY = 0.35;
     private static final Set<UUID> asked = new HashSet<>();
     private static int askedOn = 0;
+    /** Who's on the way down, and which run it is. A run that's been stopped doesn't move you any more. */
+    private static final Map<UUID, Integer> runs = new HashMap<>();
+    private static int nextRun = 0;
 
     private SkiSlope() {
     }
@@ -47,6 +52,31 @@ final class SkiSlope {
     static void clear() {
         asked.clear();
         askedOn = 0;
+        runs.clear();
+    }
+
+    /** Caught: the mountain lets go, and stops moving you. You're not on the slope any more, so you're not busy on it. */
+    static void stop(ServerPlayerEntity p) {
+        if (runs.remove(p.getUuid()) != null) RunManager.setBusy(p, false);
+    }
+
+    /** Gone mid-run: put down at the bottom, so you come back on your feet and not halfway down a mountain. */
+    static void leave(ServerPlayerEntity p) {
+        if (runs.remove(p.getUuid()) == null) return;
+        Vec3d bottom = bottom(null);
+        p.fallDistance = 0;
+        p.teleport(p.getServerWorld(), bottom.x, bottom.y + 0.5, bottom.z, p.getYaw(), 0f);
+        RunManager.setBusy(p, false);
+    }
+
+    private static Vec3d bottom(List<Vec3d> way) {
+        if (mountains()) return new Vec3d(HIRE.x - 6, FLOOR, HIRE.z - 8);
+        List<Vec3d> points = way != null ? way : route();
+        return points.get(points.size() - 1);
+    }
+
+    private static boolean still(ServerPlayerEntity p, int run) {
+        return !p.isRemoved() && Integer.valueOf(run).equals(runs.get(p.getUuid()));
     }
 
     private static double height(double x) {
@@ -190,6 +220,8 @@ final class SkiSlope {
             askedOn = s.day;
             asked.clear();
         }
+        // Too near curfew: the hut's shutting, and you'd still be up there when it comes.
+        if (s.minute + 30 >= RunManager.curfewOf(s)) return;
         for (ServerPlayerEntity p : living) {
             if (RunManager.inScene(p) || p.getPos().squaredDistanceTo(HIRE) > HIRE_REACH * HIRE_REACH || !asked.add(p.getUuid())) continue;
             List<Talk.Option> options = new ArrayList<>(List.of(Talk.option("Go on then.", q -> run(q, s, town))));
@@ -230,23 +262,34 @@ final class SkiSlope {
         double length = 0;
         for (int i = 1; i < way.size(); i++) length += way.get(i).distanceTo(way.get(i - 1));
         int ticks = (int) (length / BLOCKS_PER_TICK);
-        Vec3d top = way.get(0), bottom = mountains() ? new Vec3d(HIRE.x - 6, FLOOR, HIRE.z - 8) : way.get(way.size() - 1);
+        Vec3d top = way.get(0), bottom = bottom(way);
+        int run = ++nextRun;
+        runs.put(p.getUuid(), run);
         RunManager.setBusy(p, true);
         RunManager.sendBlack(p, town.homes.get(0), FADE * 2, "");
         float facing = (float) (Math.toDegrees(Math.atan2(way.get(1).z - top.z, way.get(1).x - top.x)) - 90);
-        RunManager.later(FADE, () -> p.teleport(p.getServerWorld(), top.x, top.y + 1, top.z, facing, 0f));
-        RunManager.later(FADE * 2, () -> RunManager.sendWalk(p, way, ticks));
+        RunManager.later(FADE, () -> {
+            if (still(p, run)) p.teleport(p.getServerWorld(), top.x, top.y + 1, top.z, facing, 0f);
+        });
+        RunManager.later(FADE * 2, () -> {
+            if (still(p, run)) RunManager.sendWalk(p, way, ticks, false);
+        });
         // You go down with the camera, so the mountain below is there when you reach it.
         PathWalker down = new PathWalker(way);
         for (int t = FOLLOW_EVERY; t < ticks; t += FOLLOW_EVERY) {
             double done = t / (double) ticks;
             RunManager.later(FADE * 2 + t, () -> {
+                if (!still(p, run)) return;
                 Vec3d here = down.at(done);
                 p.teleport(p.getServerWorld(), here.x, here.y, here.z, p.getYaw(), 0f);
             });
         }
-        RunManager.later(FADE * 2 + ticks / 2, () -> RunManager.tell(p, "", "There's someone at the top of the mountain, where you were. They weren't there before."));
+        RunManager.later(FADE * 2 + ticks / 2, () -> {
+            if (still(p, run)) RunManager.tell(p, "", "There's someone at the top of the mountain, where you were. They weren't there before.");
+        });
         RunManager.later(FADE * 2 + ticks + 2, () -> {
+            if (!still(p, run)) return;
+            runs.remove(p.getUuid());
             p.teleport(p.getServerWorld(), bottom.x, bottom.y + 0.5, bottom.z, p.getYaw(), 0f);
             RunManager.setBusy(p, false);
         });

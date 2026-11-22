@@ -172,7 +172,12 @@ final class ForestScares {
         ServerWorld world = p.getServerWorld();
         if (v.figure == null) {
             boolean dusk = s.minute >= Schedule.EVENING || s.minute < 5 * 60;
-            if (ticks < v.nextFigure || !dusk && RANDOM.nextInt(3) != 0 || s.mystery().yanderes.isEmpty()) return;
+            if (ticks < v.nextFigure || s.mystery().yanderes.isEmpty()) return;
+            if (!dusk && !TESTING && RANDOM.nextInt(3) != 0) {
+                // Not this time. In daylight she mostly doesn't, so wait a while before asking again.
+                v.nextFigure = ticks + FIGURE_FROM / 2 + RANDOM.nextInt(FIGURE_MORE / 2);
+                return;
+            }
             double angle = Math.toRadians(p.getYaw() + 90 + (RANDOM.nextDouble() - 0.5) * 50);
             double x = p.getX() + Math.cos(angle) * FIGURE_FAR, z = p.getZ() + Math.sin(angle) * FIGURE_FAR;
             int y = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, (int) Math.floor(x), (int) Math.floor(z));

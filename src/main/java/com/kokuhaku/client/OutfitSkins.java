@@ -49,6 +49,21 @@ public final class OutfitSkins {
         MinecraftClient client = MinecraftClient.getInstance();
         try (InputStream in = client.getResourceManager().getResource(base).orElseThrow().getInputStream()) {
             NativeImage img = NativeImage.read(in);
+            // First the uniform's mean tone for each part (top, bottom, shoes), so that cloth
+            // of that tone comes out in exactly the outfit's colour.
+            float[] sum = new float[3];
+            int[] count = new int[3];
+            for (int y = 16; y < img.getHeight(); y++) {
+                for (int x = 0; x < img.getWidth(); x++) {
+                    int abgr = img.getColor(x, y);
+                    if ((abgr >>> 24 & 255) == 0) continue;
+                    int r = abgr & 255, g = abgr >> 8 & 255, b = abgr >> 16 & 255;
+                    if (isSkin(r, g, b)) continue;
+                    int part = part(x, y);
+                    sum[part] += light(r, g, b);
+                    count[part]++;
+                }
+            }
             for (int y = 16; y < img.getHeight(); y++) {
                 for (int x = 0; x < img.getWidth(); x++) {
                     int abgr = img.getColor(x, y);
@@ -56,10 +71,11 @@ public final class OutfitSkins {
                     if (a == 0) continue;
                     int r = abgr & 255, g = abgr >> 8 & 255, b = abgr >> 16 & 255;
                     if (isSkin(r, g, b)) continue;
-                    int rgb = leg(x, y) ? shoe(x, y) ? o.shoes : o.bottom : o.top;
+                    int part = part(x, y);
+                    int rgb = part == 2 ? o.shoes : part == 1 ? o.bottom : o.top;
                     // The uniform's light and shade, in the new colour.
-                    float light = (0.299f * r + 0.587f * g + 0.114f * b) / 255f;
-                    float k = 0.62f + light * 0.75f;
+                    float mean = count[part] == 0 ? 0f : sum[part] / count[part];
+                    float k = Math.max(0.55f, Math.min(1.35f, 1f + (light(r, g, b) - mean) * 1.5f));
                     int nr = Math.min(255, (int) ((rgb >> 16 & 255) * k)), ng = Math.min(255, (int) ((rgb >> 8 & 255) * k)), nb = Math.min(255, (int) ((rgb & 255) * k));
                     img.setColor(x, y, a << 24 | nb << 16 | ng << 8 | nr);
                 }
@@ -74,7 +90,17 @@ public final class OutfitSkins {
 
     /** Warm and light: a hand or a neck, not cloth. */
     private static boolean isSkin(int r, int g, int b) {
-        return r > 150 && r >= g && g >= b && r - b > 35 && g > 95;
+        return r > 180 && r >= g && g >= b && r - b >= 8;
+    }
+
+    /** How light a pixel is, from 0 to 1. */
+    private static float light(int r, int g, int b) {
+        return (0.299f * r + 0.587f * g + 0.114f * b) / 255f;
+    }
+
+    /** Which part of the outfit a pixel is: 0 the top, 1 the bottom, 2 the shoes. */
+    private static int part(int x, int y) {
+        return leg(x, y) ? shoe(x, y) ? 2 : 1 : 0;
     }
 
     /** Both legs and their overlays, in the 64 by 64 skin layout. */

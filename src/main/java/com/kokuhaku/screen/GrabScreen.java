@@ -12,9 +12,11 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 
 /**
@@ -24,6 +26,7 @@ import java.util.Random;
  */
 public class GrabScreen extends CutsceneScreen {
     private static final int[] KEYS = {GLFW.GLFW_KEY_W, GLFW.GLFW_KEY_A, GLFW.GLFW_KEY_S, GLFW.GLFW_KEY_D, GLFW.GLFW_KEY_Q, GLFW.GLFW_KEY_E, GLFW.GLFW_KEY_F};
+    /** What each key says on a US keyboard, if the layout won't tell us. */
     private static final String[] LETTERS = {"W", "A", "S", "D", "Q", "E", "F"};
     private static final List<String> WHISPERS = List.of("Shh.", "Shh, shh, shh. It's only me.", "Don't fight. I've got you.", "You're shaking. Why are you shaking?", "You smell so nice.", "Nearly. Nearly. There.");
     private static final float RIGHT_GIVES = 0.09f, WRONG_TAKES = 0.14f, WARNING = 0.3f;
@@ -47,12 +50,21 @@ public class GrabScreen extends CutsceneScreen {
     private final boolean hopeless;
     private long eyesClosing = 0;
     private int shots = 0;
+    /** What each key says on this keyboard, so AZERTY players are asked for the key they can see. */
+    private final String[] labels = new String[KEYS.length];
 
     public GrabScreen(int keysNeeded, float seconds) {
         this.hopeless = keysNeeded <= 0;
         this.keysNeeded = Math.max(0, keysNeeded);
         this.drainPerMs = 1f / (seconds * 1000f);
         this.letter = random.nextInt(KEYS.length);
+        for (int i = 0; i < KEYS.length; i++) labels[i] = label(i);
+    }
+
+    private static String label(int i) {
+        String name = GLFW.glfwGetKeyName(KEYS[i], 0);
+        if (name == null || name.length() != 1 || !Character.isLetterOrDigit(name.charAt(0))) return LETTERS[i];
+        return name.toUpperCase(Locale.ROOT);
     }
 
     private void finish(boolean free) {
@@ -176,7 +188,10 @@ public class GrabScreen extends CutsceneScreen {
         m.push();
         m.translate(width / 2f + (random.nextFloat() - 0.5f) * jitter * 2, height * 0.4f + (random.nextFloat() - 0.5f) * jitter * 2, 0);
         m.scale(5f, 5f, 1f);
-        context.drawCenteredTextWithShadow(textRenderer, KokuhakuClient.menuText(LETTERS[letter]), 0, -4, justMissed ? 0xFFFF2030 : 0xFFFFFFFF);
+        // The menu font stops at ordinary letters, so anything else gets the plain one.
+        String shown = labels[letter];
+        Text text = shown.charAt(0) < 128 ? KokuhakuClient.menuText(shown) : Text.literal(shown);
+        context.drawCenteredTextWithShadow(textRenderer, text, 0, -4, justMissed ? 0xFFFF2030 : 0xFFFFFFFF);
         m.pop();
         int barWidth = 180, x = width / 2 - barWidth / 2, y = (int) (height * 0.4f) + 26;
         context.fill(x - 1, y - 1, x + barWidth + 1, y + 5, 0xA0000000);

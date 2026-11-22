@@ -59,7 +59,7 @@ final class LunchHall {
             for (StudentEntity e : RunManager.studentsOf(server)) {
                 Town.LunchSeat seat = seatOf.get(e.getSkin());
                 if (seat == null || !e.isSittingDown() || !e.goingToLunch()) continue;
-                if (watched != null && s.mystery().isYandere(e.getSkin()) && seat.table() != YOUR_TABLE) continue;
+                if (watched != null && e.isStaring() && seat.table() != YOUR_TABLE) continue;
                 tables.computeIfAbsent(seat.table(), t -> new ArrayList<>()).add(e);
             }
         }
@@ -81,7 +81,7 @@ final class LunchHall {
         if (watched != null) {
             for (StudentEntity e : RunManager.studentsOf(server)) {
                 Town.LunchSeat seat = seatOf.get(e.getSkin());
-                if (seat != null && seat.table() != YOUR_TABLE && s.mystery().isYandere(e.getSkin()) && e.isSittingDown()) e.getLookControl().lookAt(watched, NECK, NECK);
+                if (seat != null && seat.table() != YOUR_TABLE && e.isStaring() && e.isSittingDown()) e.getLookControl().lookAt(watched, NECK, NECK);
             }
         }
     }

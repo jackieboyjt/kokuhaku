@@ -285,6 +285,7 @@ final class HospitalBuilder {
             set(c[0], y, c[1], Blocks.POTTED_FERN.getDefaultState());
         }
         set(WEST + 2, y, MIDDLE - 9, ModBlocks.VENDING_MACHINE.getDefaultState());
+        set(WEST + 2, y + 1, MIDDLE - 9, ModBlocks.VENDING_MACHINE_TOP.getDefaultState());
         sign(-607, 25, MIDDLE - 6, Direction.WEST, "Reception");
         sign(-607, 25, MIDDLE + 6, Direction.WEST, "Wards", "101 - 106", "Stairs at end");
         // The way through to the corridor stays open; the rest of that wall has notice boards.

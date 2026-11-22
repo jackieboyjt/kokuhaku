@@ -9,12 +9,18 @@ import net.minecraft.block.Blocks;
 import net.minecraft.block.LightBlock;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.UUID;
 
 /**
  * Traffic lights at every crossing. Green for the cars until someone's waiting
@@ -28,8 +34,9 @@ public final class Crossings {
 
     /** Ticks: how long the cars get at least, at most with nobody waiting, and the rest. */
     private static final int CARS_AT_LEAST = 260, AMBER_TICKS = 50, WALK_TICKS = 220, CLEAR_TICKS = 50, TOO_LATE_TO_START = 50;
-    /** How far a car looks ahead for a light, where it stops short of the stripes, and the point past which amber means go. */
-    private static final double LOOKS_FOR = 18, STOPS_SHORT = 2.6, PAST_AMBER = 6;
+    /** How far a car looks ahead for a light, where it stops short of the stripes, and the point past which amber means go.
+     *  The car stands about half a car either side of its point and stops some 0.4 past this, so 3.5 keeps the bonnet off the stripes. */
+    private static final double LOOKS_FOR = 18, STOPS_SHORT = 3.5, PAST_AMBER = 6;
     /** How close to the kerb counts as waiting. */
     private static final double AT_THE_KERB = 3.2, STRIPES = 1;
     private static final int POLE = 22, HEAD = 25, GLOW = 11;
@@ -41,6 +48,8 @@ public final class Crossings {
         final List<BlockPos> heads = new ArrayList<>();
         Phase phase = Phase.CARS;
         int timer, waiting;
+        /** Changed for nobody, late on. Keeps chirping through its turn. */
+        boolean phantom;
 
         Crossing(int[] c) {
             x1 = Math.min(c[0], c[2]);
@@ -72,12 +81,18 @@ public final class Crossings {
 
     private static final List<Crossing> crossings = new ArrayList<>();
     private static ServerWorld world;
+    /** The day each player last saw a crossing change for nobody: once a day at most. */
+    private static final Map<UUID, Integer> phantomDay = new HashMap<>();
+    private static final Random RANDOM = new Random();
+    private static int ticks;
 
     private Crossings() {
     }
 
     public static void clear() {
         crossings.clear();
+        phantomDay.clear();
+        ticks = 0;
         world = null;
     }
 
@@ -85,6 +100,9 @@ public final class Crossings {
     static void build(ServerWorld w) {
         world = w;
         crossings.clear();
+        // Day numbers restart every run, so last run's phantom days would block this run's.
+        phantomDay.clear();
+        ticks = 0;
         int posts = 0;
         for (int[] c : Town.crossings()) {
             Crossing crossing = new Crossing(c);
@@ -138,6 +156,11 @@ public final class Crossings {
 
     static void tick(List<ServerPlayerEntity> players) {
         if (world == null) return;
+        RunState s = RunManager.state(world.getServer());
+        int day = s.day;
+        // Late on, the crossings go quiet.
+        boolean late = s.minute >= 22 * 60 || s.minute < 6 * 60;
+        ticks++;
         for (Crossing c : crossings) {
             // You count as waiting too, standing at the kerb.
             for (ServerPlayerEntity p : players) {
@@ -161,6 +184,38 @@ public final class Crossings {
             }
             if (c.waiting > 0) c.waiting--;
             if (c.phase != before) show(c);
+            // The green man chirps while it's your turn.
+            if (c.phase == Phase.WALK && c.timer % 12 == 0 && (!late || c.phantom) && near(players, c.middle(), 28)) {
+                float pitch = (c.timer / 12) % 2 == 0 ? 1.78f : 1.33f;
+                for (BlockPos head : c.heads) world.playSound(null, head, SoundEvents.BLOCK_NOTE_BLOCK_FLUTE.value(), SoundCategory.AMBIENT, 0.35f, pitch);
+            }
+            if (late && ticks % 20 == 0 && c.phase == Phase.CARS && c.timer >= CARS_AT_LEAST) phantom(c, players, day);
+        }
+    }
+
+    private static boolean near(List<ServerPlayerEntity> players, Vec3d at, double within) {
+        for (ServerPlayerEntity p : players) if (p.getWorld() == world && p.getPos().squaredDistanceTo(at) <= within * within) return true;
+        return false;
+    }
+
+    /** Late on, you on your own along the road from it: now and then it changes anyway, for nobody you can see. */
+    private static void phantom(Crossing c, List<ServerPlayerEntity> players, int day) {
+        Vec3d m = c.middle();
+        for (ServerPlayerEntity p : players) {
+            if (p.getWorld() != world || p.getPos().squaredDistanceTo(m) > 30 * 30 || c.distanceTo(p.getX(), p.getZ()) <= AT_THE_KERB + 2) continue;
+            boolean alone = true;
+            for (ServerPlayerEntity o : players) if (o != p && o.getWorld() == world && o.squaredDistanceTo(p) <= 30 * 30) alone = false;
+            if (!alone) continue;
+            if (!world.getEntitiesByClass(StudentEntity.class, new Box(m, m).expand(12), e -> true).isEmpty() || anyoneOn(c)) return;
+            Integer last = phantomDay.get(p.getUuid());
+            if (last != null && last == day) continue;
+            if (RANDOM.nextInt(90) != 0) continue;
+            phantomDay.put(p.getUuid(), day);
+            c.phantom = true;
+            next(c, Phase.AMBER);
+            show(c);
+            Kokuhaku.LOG.info("Crossing changed for nobody");
+            return;
         }
     }
 
@@ -168,6 +223,7 @@ public final class Crossings {
         c.phase = phase;
         c.timer = 0;
         if (phase == Phase.WALK) c.waiting = 0;
+        if (phase == Phase.CARS) c.phantom = false;
     }
 
     private static boolean anyoneOn(Crossing c) {

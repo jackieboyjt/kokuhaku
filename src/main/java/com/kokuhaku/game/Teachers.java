@@ -39,16 +39,14 @@ public final class Teachers {
             "Every teacher here got a note that year. Nobody will admit it. I burned mine. Go home, and lock your door, and stop asking me."};
     private static final Random RANDOM = new Random();
 
-    private static int madeUpOn = -DAYS_BETWEEN_MAKE_UPS, askedOn = 0, harukaAsked = 0;
+    private static int askedOn = 0;
     private static final java.util.Map<Integer, Integer> fronts = new java.util.HashMap<>();
 
     private Teachers() {
     }
 
     static void clear() {
-        madeUpOn = -DAYS_BETWEEN_MAKE_UPS;
         askedOn = 0;
-        harukaAsked = 0;
         fronts.clear();
     }
 
@@ -109,7 +107,7 @@ public final class Teachers {
         for (int group = 0; group < GROUPS; group++) {
             List<String> subjects = Schedule.subjects(s.seed + group, Schedule.weekday(s.day));
             String subject = subjects.get(period);
-            if (subject.equals(t.subject()) || subject.equals("Class Meeting") && t == STAFF.get(0)) return Schedule.roomFor(group, subject);
+            if (subject.equals(t.subject()) || subject.equals("Class Meeting") && t == STAFF.get(0)) return Schedule.roomFor(s.seed, Schedule.weekday(s.day), period, group);
         }
         return -1;
     }
@@ -182,13 +180,14 @@ public final class Teachers {
         String name = of(e).name();
         List<Talk.Option> options = new ArrayList<>();
         options.add(Talk.option(HOW, q -> Talk.say(q, name, standing(s), Talk.leave("Thank you."))));
-        if (s.strikes > 0 && s.day - madeUpOn >= DAYS_BETWEEN_MAKE_UPS && s.minute >= Schedule.AFTER_SCHOOL && s.minute < s.difficulty.curfew - 2 * MAKE_UP_MINUTES) {
+        if (s.strikes > 0 && s.day - s.madeUpOn >= DAYS_BETWEEN_MAKE_UPS && s.minute >= Schedule.AFTER_SCHOOL && s.minute < RunManager.dayCurfew(s) - 2 * MAKE_UP_MINUTES) {
             options.add(Talk.option(MAKE_UP, q -> makeUp(q, s, name)));
         }
         if (askedOn != s.day) options.add(Talk.option(ABOUT, q -> aboutSomeone(q, s, name)));
         if (!s.pages.isEmpty() || s.scenarios.contains(6)) options.add(Talk.option(HARUKA, q -> {
-            Talk.say(q, name, HARUKA_LINES[Math.min(harukaAsked, HARUKA_LINES.length - 1)], Talk.leave("..."));
-            harukaAsked++;
+            Talk.say(q, name, HARUKA_LINES[Math.min(s.harukaAsked, HARUKA_LINES.length - 1)], Talk.leave("..."));
+            s.harukaAsked++;
+            s.markDirty();
         }));
         options.add(Talk.leave("Never mind."));
         Talk.say(p, name, greeting(s), e.getId(), options.toArray(new Talk.Option[0]));
@@ -196,8 +195,9 @@ public final class Teachers {
 
     /** An hour's filing, and one mark comes off. */
     private static void makeUp(ServerPlayerEntity p, RunState s, String name) {
-        madeUpOn = s.day;
+        s.madeUpOn = s.day;
         s.strikes--;
+        s.markDirty();
         RunManager.skipMinutes(p.server, s, MAKE_UP_MINUTES);
         Kokuhaku.LOG.info("{} let you work off a strike, {} left", name, s.strikes);
         RunManager.tell(p, "An hour later", name + " crosses one mark out. \"Don't make me regret it.\"");

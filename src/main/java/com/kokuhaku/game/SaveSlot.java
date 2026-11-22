@@ -70,7 +70,7 @@ public final class SaveSlot {
      * The run as it stands. morning: the night's over and the day hasn't begun, so
      * loading it starts that next day; otherwise it's the very first morning.
      */
-    static void write(RunState s, boolean morning, Collection<UUID> gone, UUID accomplice, List<ServerPlayerEntity> players) {
+    static void write(RunState s, boolean morning, Collection<UUID> gone, Collection<UUID> ghosts, UUID accomplice, List<ServerPlayerEntity> players) {
         if (System.getenv("KOKUHAKU_NOSAVE") != null) return;
         NbtCompound save = new NbtCompound();
         save.put("State", s.writeNbt(new NbtCompound()));
@@ -78,7 +78,15 @@ public final class SaveSlot {
         NbtList out = new NbtList();
         for (UUID id : gone) out.add(NbtString.of(id.toString()));
         save.put("Gone", out);
-        if (accomplice != null) save.putString("Accomplice", accomplice.toString());
+        // Of those, who'd been called back. Older saves don't have it.
+        NbtList called = new NbtList();
+        for (UUID id : ghosts) called.add(NbtString.of(id.toString()));
+        save.put("Ghosts", called);
+        if (accomplice != null) {
+            save.putString("Accomplice", accomplice.toString());
+            // Older saves have only who: the name's filled in when they're back, and no leads were used.
+            Accomplice.write(save);
+        }
         NbtCompound bags = new NbtCompound();
         StringBuilder names = new StringBuilder();
         for (ServerPlayerEntity p : players) {
@@ -88,6 +96,9 @@ public final class SaveSlot {
             names.append(p.getGameProfile().getName());
         }
         save.put("Bags", bags);
+        // Older saves have neither: the phone starts empty and the plan from nothing.
+        save.put("Phone", Phone.write(s));
+        save.put("Kept", Kept.write());
         // The day you'll wake up on.
         int day = morning ? s.day + 1 : s.day;
         try {
@@ -102,12 +113,25 @@ public final class SaveSlot {
         }
     }
 
+    /** The saved run, or null if it can't be read: then it's put aside, so the slot's free again. */
     static NbtCompound read() {
         try {
             return NbtIo.readCompressed(dir().resolve(RUN).toFile());
-        } catch (IOException e) {
+        } catch (Exception e) {
             Kokuhaku.LOG.warn("Couldn't read the saved run", e);
+            quarantine();
             return null;
+        }
+    }
+
+    /** A save that can't be loaded. It's kept beside the slot, not deleted, so it can be looked at. */
+    static void quarantine() {
+        try {
+            if (Files.exists(dir().resolve(RUN))) Files.move(dir().resolve(RUN), dir().resolve(RUN + ".broken"), StandardCopyOption.REPLACE_EXISTING);
+            Files.deleteIfExists(dir().resolve(SUMMARY));
+            Kokuhaku.LOG.warn("The saved run was put aside as {}.broken", RUN);
+        } catch (IOException e) {
+            Kokuhaku.LOG.warn("Couldn't put the saved run aside", e);
         }
     }
 

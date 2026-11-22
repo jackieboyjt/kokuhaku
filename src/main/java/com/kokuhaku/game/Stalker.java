@@ -25,7 +25,7 @@ import java.util.Random;
 final class Stalker {
     private static final int FIRST_DAY = 2, HUNT_DAY = 7, HUNT_BEFORE_CURFEW = 75;
     private static final int LOOK_TICKS = 25, CREEP_TICKS = 90, CHECK_EVERY = 20;
-    private static final double FAR = 34, NEAR = 15, CAUGHT = 1.7, HUNT_PACE = 1.08, CREEP_FRACTION = 0.6, GONE_WITHIN = 6;
+    private static final double FAR = 34, NEAR = 15, CAUGHT = 1.7, HUNT_PACE = 1.08, CREEP_FRACTION = 0.6, GONE_WITHIN = 6, HEARD_FROM = 40;
     /** Each second after school, the chance she's out there: small, and bigger by the day. */
     private static final float CHANCE_A_DAY = 0.0012f, EVENING_FACTOR = 2.5f;
     private static final Random RANDOM = new Random();
@@ -43,7 +43,13 @@ final class Stalker {
     }
 
     static void vanish() {
-        if (figure != null) figure.discard();
+        if (figure != null) {
+            // Everyone near enough to have seen it go gets the quiet after (Unease does the same on their side).
+            if (figure.getWorld() instanceof ServerWorld world) {
+                for (ServerPlayerEntity p : world.getPlayers()) if (p.distanceTo(figure) <= HEARD_FROM) RunManager.hush(p, 0);
+            }
+            figure.discard();
+        }
         figure = null;
         watched = null;
         hunting = false;
@@ -58,6 +64,11 @@ final class Stalker {
     static float closeness(ServerPlayerEntity p) {
         if (figure == null || watched != p) return 0f;
         return (float) Math.max(0, Math.min(1, 1 - figure.distanceTo(p) / FAR));
+    }
+
+    /** Whether she's near enough for you to hear her steps (Unease.HEARD_FROM), whoever she's watching. */
+    static boolean heardBy(ServerPlayerEntity p) {
+        return figure != null && !figure.isRemoved() && figure.getWorld() == p.getWorld() && figure.distanceTo(p) <= HEARD_FROM;
     }
 
     private static boolean sees(ServerPlayerEntity p, Vec3d spot) {
@@ -116,15 +127,16 @@ final class Stalker {
         Kokuhaku.LOG.info("The figure is {} blocks from {} ({})", (int) e.distanceTo(p), p.getGameProfile().getName(), hunt ? "hunting" : "watching");
     }
 
-    /** No more standing a long way off. */
-    static void comeFor(ServerPlayerEntity p, RunState s, Town town) {
+    /** No more standing a long way off. True if she found a place to come from. */
+    static boolean comeFor(ServerPlayerEntity p, RunState s, Town town) {
         vanish();
         Vec3d at = spotBehind(p, town, NEAR, false);
         if (at != null) appear(p, s, at, true);
+        return figure != null;
     }
 
-    private static float dayChance(RunState s) {
-        return s.day * CHANCE_A_DAY * (s.minute >= Schedule.EVENING ? EVENING_FACTOR * Clothes.darkFactor(s) : 1f) * Habits.stalking(s);
+    private static float dayChance(RunState s, List<ServerPlayerEntity> players) {
+        return s.day * CHANCE_A_DAY * (s.minute >= Schedule.EVENING ? EVENING_FACTOR * Clothes.darkFactor(s, players) : 1f) * Habits.stalking(s);
     }
 
     static void tick(RunState s, List<ServerPlayerEntity> players, Town town, boolean playing, int ticks) {
@@ -143,7 +155,7 @@ final class Stalker {
         if (Accomplice.is(p) || RunManager.isHomeNow(p, s) || RunManager.inScene(p)) return;
         int curfew = RunManager.curfewOf(s);
         boolean hunt = s.day >= HUNT_DAY && s.minute >= curfew - HUNT_BEFORE_CURFEW;
-        if (!hunt && !forced && RANDOM.nextFloat() > dayChance(s)) return;
+        if (!hunt && !forced && RANDOM.nextFloat() > dayChance(s, players)) return;
         // She starts far off in the first week and a good deal nearer in the last.
         double distance = FAR - (FAR - NEAR) * Math.min(1f, s.day / (float) Schedule.DAYS);
         Vec3d at = spotBehind(p, town, distance, true);
@@ -171,6 +183,11 @@ final class Stalker {
             return;
         }
         figure.setBodyYaw(yaw);
+        // Late enough and she stops standing about: gone, so she can come walking instead.
+        if (s.day >= HUNT_DAY && s.minute >= RunManager.curfewOf(s) - HUNT_BEFORE_CURFEW) {
+            vanish();
+            return;
+        }
         if (lookingAt(p, figure.getPos())) {
             unseen = 0;
             if (++lookedAt >= LOOK_TICKS) {
@@ -188,7 +205,11 @@ final class Stalker {
                 return;
             }
             Vec3d closer = spotBehind(p, town, distance * CREEP_FRACTION, true);
-            if (closer == null) return;
+            if (closer == null) {
+                // Nowhere nearer to stand, and you've left her well behind.
+                if (distance > FAR * 1.5) vanish();
+                return;
+            }
             figure.refreshPositionAndAngles(closer.x, closer.y, closer.z, yaw, 0f);
             world.playSound(null, closer.x, closer.y, closer.z, SoundEvents.BLOCK_STONE_STEP, SoundCategory.HOSTILE, 0.5f, 0.6f);
         }

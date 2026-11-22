@@ -3,6 +3,7 @@ package com.kokuhaku.client;
 import com.kokuhaku.KokuhakuClient;
 import com.kokuhaku.entity.StudentEntity;
 import com.kokuhaku.game.Roster;
+import com.kokuhaku.game.Schedule;
 import com.kokuhaku.game.Traits;
 import com.kokuhaku.item.ModItems;
 import com.kokuhaku.screen.JumpscareScreen;
@@ -71,7 +72,8 @@ public class StudentRenderer extends EntityRenderer<StudentEntity> {
     private int skinOf(StudentEntity entity) {
         if (MenuScene.isMenuGirl(entity)) return MenuScene.cycle().girl();
         // In a party you never get a proper look at her, so nobody caught has anything to tell.
-        if (ClientRun.party > 1 && (entity.getY() > 90 || !entity.getMainHandStack().isEmpty())) {
+        // Only the bat counts: a teacher's chalk doesn't make her anyone.
+        if (ClientRun.party > 1 && (entity.getY() > 90 || entity.getMainHandStack().isOf(ModItems.BAT))) {
             return (int) (System.currentTimeMillis() / 90 % StudentSkins.GIRL_COUNT);
         }
         return entity.getSkin();
@@ -345,9 +347,10 @@ public class StudentRenderer extends EntityRenderer<StudentEntity> {
             model.head.yaw = MathHelper.sin(age * 0.45f) * 0.16f;
         }
         if (pose != Pose.NONE) plead(age);
-        boolean humanNow = pose == Pose.NONE && !MenuScene.isMenuGirl(entity) && entity.getY() <= 90 && entity.getPeek() == 0 && entity.getMainHandStack().isEmpty();
+        boolean humanNow = pose == Pose.NONE && !MenuScene.isMenuGirl(entity) && entity.getY() <= 90 && entity.getPeek() == 0
+                && (entity.getMainHandStack().isEmpty() || entity.getMainHandStack().isOf(ModItems.CHALK));
         if (humanNow) Mannerisms.apply(model, entity, age, limbPos, limbSpeed, sitting);
-        boolean umbrella = humanNow && !sitting && entity.getWorld().isRaining() && entity.getWorld().isSkyVisible(entity.getBlockPos().up(2));
+        boolean umbrella = humanNow && !sitting && entity.getMainHandStack().isEmpty() && (entity.getWorld().isRaining() || Schedule.isSnowDay(ClientRun.day) && entity.getY() <= 90) && entity.getWorld().isSkyVisible(entity.getBlockPos().up(2));
         if (umbrella) {
             model.rightArm.pitch = -1.2f;
             model.rightArm.yaw = -0.25f;
@@ -396,7 +399,8 @@ public class StudentRenderer extends EntityRenderer<StudentEntity> {
             model.leftSleeve.copyTransform(model.leftArm);
         }
         if (swing >= 0f || endRoom && JumpscareScreen.batHeld) held = new ItemStack(ModItems.BAT);
-        if (!held.isEmpty() && !batInHand) {
+        // Chalk is just carried; only the bat goes up.
+        if (held.isOf(ModItems.BAT) && !batInHand) {
             // Raised, ready to come down; in the swing, wound up over her shoulder and then whipped down at you.
             model.rightArm.pitch = swing < 0f ? MathHelper.lerp(endRoom ? JumpscareScreen.batRaise : 1f, 0.35f, -2.4f) : swingArm(swing, -2.4f, -0.6f);
             model.rightArm.roll = -0.14f;
@@ -450,7 +454,8 @@ public class StudentRenderer extends EntityRenderer<StudentEntity> {
         }
 
         // She's only ever a shape: nobody can say who it was.
-        float r = peek != 0 && peek < StudentEntity.DRAGGED ? 0.1f : 1f, g = r, b = r;
+        boolean shape = peek != 0 && peek < StudentEntity.DRAGGED || peek == StudentEntity.HAULING && Cutscene.dragMasked();
+        float r = shape ? 0.1f : 1f, g = r, b = r;
         // The candles reach this far: you've got to be able to see the ropes.
         if (tiedUp) light = LightmapTextureManager.pack(11, 0);
 
@@ -514,7 +519,9 @@ public class StudentRenderer extends EntityRenderer<StudentEntity> {
         matrices.translate(0.0, -1.501, 0.0);
 
         boolean youItself = (dragged || tiedUp) && MinecraftClient.getInstance().player != null;
-        VertexConsumer vc = consumers.getBuffer(RenderLayer.getEntityTranslucent(youItself ? MinecraftClient.getInstance().player.getSkinTexture() : StudentSkins.texture(skin)));
+        // A shape is the same shape whoever it is: one girl's outline for all of them.
+        Identifier skinTexture = shape ? StudentSkins.texture(0) : StudentSkins.texture(skin);
+        VertexConsumer vc = consumers.getBuffer(RenderLayer.getEntityTranslucent(youItself ? MinecraftClient.getInstance().player.getSkinTexture() : skinTexture));
         if (glitch) {
             // Chromatic ghosts either side, jittering, then the real girl.
             float jitter = (random.nextFloat() - 0.5f) * 0.12f;
@@ -534,7 +541,7 @@ public class StudentRenderer extends EntityRenderer<StudentEntity> {
             HerPoses.legRopes(matrices, consumers, light);
             matrices.pop();
         }
-        if (wearsGlasses(skin) && !youItself) {
+        if (wearsGlasses(skin) && !youItself && !shape) {
             matrices.push();
             model.head.rotate(matrices);
             glasses.render(matrices, consumers, light, r, g, b);

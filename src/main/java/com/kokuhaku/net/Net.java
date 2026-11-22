@@ -5,7 +5,12 @@ import net.minecraft.util.Identifier;
 
 /** Packet ids. The game is single-player, but client and integrated server still talk through packets. */
 public final class Net {
+    /** Which build of the packets this is. Change it whenever any packet's contents change. */
+    public static final int PROTOCOL = 146;
+
     // Server -> client
+    /** Sent first on joining, run or not: the host's PROTOCOL. */
+    public static final Identifier HELLO = id("hello");
     /** day, minute, guessesLeft, difficulty, status */
     public static final Identifier STATE = id("state");
     /** title, subtitle, style (0 = normal, 1 = sleep fade) */
@@ -69,6 +74,8 @@ public final class Net {
     public static final Identifier PHONE_REPLY = id("phone_reply");
     /** The accomplice leaves something false in the bag. */
     public static final Identifier PLANT = id("plant");
+    /** girl, mark (0-3), memo */
+    public static final Identifier MARK = id("mark");
     /** student, option */
     /** Your mic: sound. */
     public static final Identifier VOICE = id("voice");
@@ -80,8 +87,6 @@ public final class Net {
     public static final Identifier START = id("start");
     public static final Identifier CHOOSE = id("choose");
     public static final Identifier OPEN_BAG = id("open_bag");
-    /** girl id */
-    public static final Identifier ACCUSE = id("accuse");
     /** drink ordinal */
     public static final Identifier BUY = id("buy");
     /** job ordinal, mistakes */
@@ -109,6 +114,8 @@ public final class Net {
     public static final Identifier GRAB_DONE = id("grab_done");
     /** You'd rather skip the walk in. */
     public static final Identifier SKIP_WALK = id("skip_walk");
+    /** girl: the next person you talk to, you'll ask about her. */
+    public static final Identifier ASK_ABOUT = id("ask_about");
 
     private Net() {
     }

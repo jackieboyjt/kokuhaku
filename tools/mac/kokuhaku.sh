@@ -84,6 +84,7 @@ if [ -f "$INSTANCE/map.txt" ]; then
   fi
 fi
 
-osascript -e 'quit app "Prism Launcher"' >/dev/null 2>&1
+# By its id, not its name: the bundle may have been renamed.
+osascript -e 'quit app id "org.prismlauncher.PrismLauncher"' >/dev/null 2>&1
 sleep 2
 open -j -g -a "$APP" --args --launch Kokuhaku

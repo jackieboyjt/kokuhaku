@@ -66,6 +66,13 @@ public final class Voice {
             thread.setDaemon(true);
             thread.start();
         }
+        // Anyone who's left stops being listened for, and their audio line is let go.
+        var handler = client.getNetworkHandler();
+        speakers.entrySet().removeIf(e -> {
+            if (handler != null && handler.getPlayerListEntry(e.getKey()) != null) return false;
+            e.getValue().stop();
+            return true;
+        });
     }
 
     public static void stopAll() {
@@ -74,6 +81,7 @@ public final class Voice {
     }
 
     private static void capture(MinecraftClient client) {
+        int heard = micChanges;
         try {
             if (TEST_TONE) {
                 tone(client);
@@ -87,7 +95,6 @@ public final class Voice {
             Adpcm encoder = new Adpcm();
             int hangover = 0;
             double noise = GATE;
-            int heard = micChanges;
             while (wanted && heard == micChanges) {
                 int read = mic.read(raw, 0, raw.length);
                 if (read < raw.length) continue;
@@ -113,7 +120,8 @@ public final class Voice {
         } catch (LineUnavailableException | IllegalArgumentException e) {
             // No microphone: you can still hear everyone.
             Kokuhaku.LOG.warn("No microphone for voice chat: {}", e.getMessage());
-            while (wanted) sleep(1000);
+            // Until another one is chosen in Settings: then the next tick tries again.
+            while (wanted && heard == micChanges) sleep(1000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {

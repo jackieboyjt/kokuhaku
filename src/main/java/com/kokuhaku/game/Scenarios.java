@@ -1,5 +1,6 @@
 package com.kokuhaku.game;
 
+import com.kokuhaku.Difficulty;
 import com.kokuhaku.Kokuhaku;
 import com.kokuhaku.game.Roster.Student;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -13,7 +14,12 @@ import java.util.Random;
  * gaps between lessons, on the walk home and at the weekend. Every one of them
  * changes something: a clue, a girl's feelings, your money, or your nerve.
  */
-final class Scenarios {
+public final class Scenarios {
+    /** Starts a night line that gets typed out, then taken back. The screen strips it. */
+    public static final String UNSAID = "~~";
+    /** Half a thought, never finished. None of them is about anyone in particular. */
+    static final String[] UNSAID_LINES = {"Someone was standing at the foot of your b", "At 3:12 the handle turned, and the door",
+            "You heard your name, very quietly, from under the", "There was a girl in your garden. She was holding", "Your phone lit up at four. The message said"};
     private static final int BREAK = Schedule.PERIOD_START[1] - 8, LUNCH = Schedule.LUNCH + 6, AFTER = Schedule.AFTER_SCHOOL + 12,
             EVENING = Schedule.EVENING + 45, WEEKEND = 11 * 60;
     private static final float CHANCE = 0.55f;
@@ -92,11 +98,11 @@ final class Scenarios {
         switch (c) {
             case BENTO -> Talk.say(p, "On your desk", "A bento box, wrapped in cloth. There's no name on it. It's still warm. Inside, everything you like, and nothing you don't.",
                     Talk.option("Eat it.", q -> {
-                        fond(s, her, 2);
+                        s.longed(2);
                         RunManager.tell(q, "", "It's the best thing you've ever eaten. How did they know?");
                     }),
                     Talk.option("Leave it.", q -> {
-                        fond(s, her, -1);
+                        s.longed(-1);
                         RunManager.tell(q, "", "When you come back it's gone. There's one grain of rice on your chair.");
                     }));
             case PHOTO -> Talk.say(p, "In your bag", "A photograph you didn't put there. It's you, asleep, taken from the foot of your bed.",
@@ -108,11 +114,11 @@ final class Scenarios {
                     Talk.option("Burn it.", q -> RunManager.tell(q, "", "It doesn't help. You've seen it now.")));
             case SHOES -> Talk.say(p, "Your shoes", "Someone's filled your outdoor shoes with white petals. They've been arranged, one by one, in a spiral.",
                     Talk.option("Shake them out.", q -> {
-                        fond(s, her, -1);
+                        s.longed(-1);
                         RunManager.tell(q, "", "As you shake them out, you feel someone stop watching.");
                     }),
                     Talk.option("Wear them anyway.", q -> {
-                        fond(s, her, 1);
+                        s.longed(1);
                         RunManager.tell(q, "", "Petals crush under your heels all day. Somewhere, someone's delighted.");
                     }));
             case FLOWERS -> {
@@ -145,7 +151,10 @@ final class Scenarios {
                     Talk.option("Turn round.", q -> {
                         boolean seen = RANDOM.nextBoolean();
                         if (seen) {
-                            s.notes.add("Someone followed you home. " + Roster.get(her).hair().phrase(1));
+                            Student who = Roster.get(her);
+                            Traits.Phrased caught = s.difficulty == Difficulty.EASY ? who.hair()
+                                    : s.mystery().trace(s, List.<Traits.Phrased>of(who.hair(), who.length()), RANDOM);
+                            s.notes.add("Someone followed you home. " + caught.phrase(1));
                             s.markDirty();
                         }
                         RunManager.tell(q, "", seen ? "A figure slips round the corner, but not before the streetlight catches their hair. You write it down." : "There's nobody there. There's nobody there at all.");
@@ -157,14 +166,14 @@ final class Scenarios {
                 Talk.say(p, who.firstName(), "Can I say something? Behind the gym, where nobody can see. I... I wrote this out and now I can't read it. I like you. I really like you. That's it. That's the whole thing.",
                         Talk.option("I like you too.", q -> {
                             fond(s, g, 2);
-                            fond(s, her, -2);
+                            s.longed(-2);
                             s.livingVictim = g;
                             s.markDirty();
                             Talk.say(q, who.firstName(), "Really? I... Really? Okay. Okay! Don't tell anyone yet. I think someone's watching us.", Talk.leave("Okay."));
                         }),
                         Talk.option("I'm sorry.", q -> {
                             fond(s, g, -2);
-                            fond(s, her, 1);
+                            s.longed(1);
                             Talk.say(q, who.firstName(), "No. No, it's fine. It's fine. Forget I said it.", Talk.leave("..."));
                         }));
             }
@@ -180,6 +189,10 @@ final class Scenarios {
                     Talk.option("Try not to think about it.", q -> RunManager.tell(q, "", "You do try.")));
             case SHRINE -> Talk.say(p, "A paper slip", "An old woman on the street presses a fortune slip at you. \"Fortunes, ¥" + FORTUNE_YEN + ". Everyone at your school's been buying them. One girl bought all of mine.\"",
                     Talk.option("Pay ¥" + FORTUNE_YEN + ".", q -> {
+                        if (s.yen < FORTUNE_YEN) {
+                            RunManager.tell(q, "", "You haven't got it. She keeps hold of the slip.");
+                            return;
+                        }
                         s.yen -= FORTUNE_YEN;
                         int g = freeGirl(s);
                         s.notes.add("Fortune slip: \"Not " + Roster.get(g).firstName() + ". Look nearer.\"");

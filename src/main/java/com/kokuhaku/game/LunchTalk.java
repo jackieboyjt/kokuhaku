@@ -88,9 +88,9 @@ final class LunchTalk {
         if (gone != null && r.nextBoolean()) second = new Back("Nobody's sat at " + Roster.get(gone).firstName() + "'s place since.", "...Don't. Don't look at it.");
         steps.add(toThem(c, a, second.first()));
         steps.add(toThem(a, c, second.second()));
-        // On the harder difficulties, not everything anyone tells you is so.
+        // On the harder difficulties, not everything anyone tells you is so. Nor is all of it a lie.
         if (s.difficulty.ordinal() >= com.kokuhaku.Difficulty.HARD.ordinal() && r.nextBoolean()) {
-            String heard = s.mystery().falseRumour(r);
+            String heard = r.nextBoolean() ? s.mystery().trueRumour(r, s.day) : s.mystery().falseRumour(r);
             steps.add(new Beat(new Step(b, Dialogue.reveal(new com.kokuhaku.game.Mystery.Clue(0, com.kokuhaku.game.Mystery.Kind.TRAIT, heard, b, s.day, -1)), List.of(new Answer("Write that down.", b, "Don't say it came from me.", 0, q -> {
                 s.notes.add("Heard at lunch: \"" + heard + "\"");
                 s.markDirty();
@@ -107,7 +107,7 @@ final class LunchTalk {
         List<Integer> knows = new ArrayList<>(), rest = new ArrayList<>();
         for (int i = 0; i < people.size(); i++) {
             int id = people.get(i), index = i;
-            boolean holds = s.mystery().clues.stream().anyMatch(c -> c.witness() == id && c.day() <= s.day && !s.found.contains(c.id()));
+            boolean holds = s.mystery().clues.stream().anyMatch(c -> c.witness() == id && c.day() <= s.day && !s.found.contains(c.id()) && !s.burned.contains(c.id()));
             (holds ? knows : rest).add(index);
         }
         Collections.shuffle(rest, r);

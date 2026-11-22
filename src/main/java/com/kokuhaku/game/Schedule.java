@@ -69,6 +69,8 @@ public final class Schedule {
     public static boolean isSnowDay(int day) {
         String forced = System.getenv("KOKUHAKU_SNOW");
         if (forced != null) return Integer.toString(day).equals(forced);
+        // Developer testing only: a stage gets the school day it asked for.
+        if (System.getenv("KOKUHAKU_STAGE") != null) return false;
         long seed = snowSeed;
         if (seed == 0 || weekday(day) >= 5) return false;
         Random r = new Random(seed * 0x9E3779B97F4A7C15L ^ 0x534E4F57L);
@@ -124,6 +126,22 @@ public final class Schedule {
         return room == 0 ? 0 : (room - 1 + group * 2) % ROOMS + 1;
     }
 
+    /**
+     * Where a group is in a period, with no two groups in one room: a group whose room
+     * is already taken moves along to the next free one. Group 0 is where the diary says.
+     */
+    public static int roomFor(long seed, int weekday, int period, int group) {
+        boolean[] taken = new boolean[ROOMS + 1];
+        int room = 0;
+        for (int g = 0; g <= group; g++) {
+            room = roomFor(g, subjects(seed + g, weekday).get(period));
+            if (room == 0) continue;
+            while (taken[room]) room = room % ROOMS + 1;
+            taken[room] = true;
+        }
+        return room;
+    }
+
     public static int homeroomFor(int group) {
         return (HOMEROOM_2A - 1 + group) % ROOMS + 1;
     }
@@ -154,6 +172,11 @@ public final class Schedule {
 
     public static String clock(int minute) {
         return String.format("%02d:%02d", minute / 60 % 24, minute % 60);
+    }
+
+    /** Money, written the same way everywhere: ¥2,000, or -¥500 in debt. */
+    public static String yen(int n) {
+        return (n < 0 ? "-¥" : "¥") + String.format(java.util.Locale.ROOT, "%,d", Math.abs((long) n));
     }
 
     /** Minecraft time of day for a clock time (0 ticks = 06:00). */

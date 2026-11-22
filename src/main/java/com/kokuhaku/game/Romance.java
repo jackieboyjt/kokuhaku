@@ -33,7 +33,9 @@ final class Romance {
     private static final int ASK_AGAIN_AFTER = 4, TURNED_DOWN_FOR_GOOD = 2;
     /** Two days without a word and she starts to wonder; this low and she's gone. */
     private static final int NEGLECTED_AFTER = 2, ENDS_IT_AT = 1;
-    private static final int DATE_YEN = 500, DATE_MINUTES = 120, LATEST_DATE = 60, HANGOUT_MINUTES = 90, CREPES_YEN = 450;
+    private static final int DATE_YEN = 500, DATE_MINUTES = 120, LATEST_DATE = DATE_MINUTES + 30, HANGOUT_MINUTES = 90, CREPES_YEN = 450;
+    /** How long the dark lasts when a party's clock can't be spent on you: five seconds. */
+    private static final int LATER_TICKS = 100;
     /** From this many nights in, she may decide your girlfriend's in the way. */
     private static final int JEALOUS_AFTER = 5;
     private static final float JEALOUS_CHANCE = 0.12f, SAFER = 0.5f;
@@ -86,12 +88,15 @@ final class Romance {
     /** Saying something kind: once a day to each girl, and each has one thing she really wants to hear. */
     static final String NICE = "Say something nice.";
     private static final String KIND = "You're really kind.", FUNNY = "You always make me laugh.", HARD_WORKING = "You work so hard.";
-    private static final int[] NICE_ON = new int[Roster.TOTAL], HANG_ASKED_ON = new int[Roster.TOTAL];
+    private static final int[] NICE_ON = new int[Roster.TOTAL], HANG_ASKED_ON = new int[Roster.TOTAL], HANG_YES_ON = new int[Roster.TOTAL];
     private static final int FLUSTERED_TICKS = 90;
+    /** How close your girlfriend has to be to see you being nice to someone else. */
+    private static final double SEEN_NEAR = 16;
 
     static void clear() {
         java.util.Arrays.fill(NICE_ON, 0);
         java.util.Arrays.fill(HANG_ASKED_ON, 0);
+        java.util.Arrays.fill(HANG_YES_ON, 0);
         devYes = -1;
     }
 
@@ -119,6 +124,8 @@ final class Romance {
                 boolean right = said.equals(wanted);
                 // From someone she hardly knows, it's only words.
                 if (right && s.talkDays[who.id()] >= DAYS_TO_ASK) s.fondness[who.id()] = Math.min(5, s.fondness[who.id()] + 1);
+                // Your girlfriend, near enough to hear it.
+                if (who.female() && s.dating >= 0 && s.dating != who.id() && s.seenWithDay != s.day && girlfriendNear(q, s)) seenWith(s, who.id());
                 s.markDirty();
                 Kokuhaku.LOG.info("Complimented {}: {} ({})", name, said, right ? "flustered" : "polite");
                 if (right && her != null) her.fluster(FLUSTERED_TICKS);
@@ -126,6 +133,23 @@ final class Romance {
             });
         }
         Talk.say(p, name, "...Yes?", options);
+    }
+
+    /** Whether your girlfriend is close enough to see who you're talking to. */
+    private static boolean girlfriendNear(ServerPlayerEntity p, RunState s) {
+        for (StudentEntity e : RunManager.studentsOf(p.server)) {
+            if (e.isAlive() && e.getSkin() == s.dating && e.getWorld() == p.getWorld() && e.squaredDistanceTo(p) <= SEEN_NEAR * SEEN_NEAR) return true;
+        }
+        return false;
+    }
+
+    /** Seen with another girl while you're going out with someone: once a day, it costs you a little with her. */
+    private static void seenWith(RunState s, int girl) {
+        if (s.dating < 0 || s.dating == girl || s.seenWithDay == s.day) return;
+        s.seenWith = girl;
+        s.seenWithDay = s.day;
+        s.fondness[s.dating] = Math.max(-5, s.fondness[s.dating] - 1);
+        s.markDirty();
     }
 
     private static String flustered(Personality p) {
@@ -159,7 +183,8 @@ final class Romance {
     /** Every romantic line she'll hear from you today, in order. */
     static List<String> options(RunState s, Student who) {
         List<String> lines = new ArrayList<>();
-        if (canHangOut(s, who) && s.dating < 0) lines.add(HANG);
+        // Not your girlfriend (she has dates), but anyone else, girlfriend or no; she'll hear about it.
+        if (canHangOut(s, who)) lines.add(HANG);
         String main = option(s, who);
         if (main != null) lines.add(main);
         return lines;
@@ -182,8 +207,6 @@ final class Romance {
     /** Whether she'd say yes, if you asked now. */
     private static boolean wouldSayYes(ServerPlayerEntity p, RunState s, Student who) {
         int g = who.id();
-        // She's been waiting for you to ask.
-        if (s.mystery().isYandere(g)) return true;
         if (g == devYes) return true;
         if (match(s, g) < FRIENDS_ONLY) return false;
         if (s.talkDays[g] < DAYS_FOR_YES || s.hangouts[g] < HANGOUTS_FOR_YES || s.fondness[g] < FONDNESS_FOR_YES) return false;
@@ -198,11 +221,13 @@ final class Romance {
         }
         s.dating = who.id();
         s.datingSince = s.day;
+        // Whoever you were seen with before her is someone else's business.
+        s.seenWith = -1;
         s.lastTalk[who.id()] = s.day;
         s.known.add(who.id());
         s.fondness[who.id()] = Math.min(5, s.fondness[who.id()] + 1);
         s.markDirty();
-        Kokuhaku.LOG.info("Now going out with {} (yandere: {})", who.firstName(), datingHer(s));
+        Kokuhaku.LOG.info("Now going out with {}", who.firstName());
         Talk.say(p, who.firstName(), yes(who.personality()), Talk.leave("..."));
     }
 
@@ -210,15 +235,36 @@ final class Romance {
     private static void turnedDown(ServerPlayerEntity p, RunState s, Student who) {
         int g = who.id();
         boolean friend = match(s, g) < FRIENDS_ONLY;
+        // Before the fondness drops: did you ask too soon, or just not yet?
+        boolean early = s.talkDays[g] < DAYS_FOR_YES || s.hangouts[g] < HANGOUTS_FOR_YES || s.fondness[g] < FONDNESS_FOR_YES;
         s.turnedDown[g]++;
         s.askAgain[g] = s.day + ASK_AGAIN_AFTER;
         s.fondness[g] = Math.max(-5, s.fondness[g] - 2);
         s.markDirty();
         Kokuhaku.LOG.info("{} said no ({} time{}, friends only: {})", who.firstName(), s.turnedDown[g], s.turnedDown[g] == 1 ? "" : "s", friend);
-        String line = friend ? "I really like you. Just... not like that. I'm sorry. Can we still be friends?" : no(who.personality());
+        String line = friend ? "I really like you. Just... not like that. I'm sorry. Can we still be friends?" : early ? no(who.personality()) : notYet(who.personality());
         if (s.turnedDown[g] >= TURNED_DOWN_FOR_GOOD) line = "You asked me already. The answer's the same. Please don't ask again.";
         Talk.say(p, who.firstName(), line, Talk.leave("...Okay."));
-        RunManager.later(20 * 60, () -> Phone.text(p.server, s, "Class 2-A", "someone got turned down by the shoe lockers today. brutal"));
+        // The gossip is about today. If the night has come first, it's old news.
+        int day = s.day;
+        boolean school = Schedule.isSchoolDay(s.day) && s.minute < Schedule.AFTER_SCHOOL + 30;
+        MinecraftServer server = p.server;
+        RunManager.later(20 * 60, () -> {
+            if (s.day != day || s.status != RunState.Status.PLAYING) return;
+            Phone.text(server, s, "Class 2-A", school ? "someone got turned down by the shoe lockers today. brutal" : "someone got turned down today. brutal");
+        });
+    }
+
+    /** She knows you well enough. She just isn't there yet. */
+    private static String notYet(Personality p) {
+        return switch (p) {
+            case CHEERFUL -> "I like you! I do! I just... need a bit longer. Is that okay?";
+            case SHY -> "I... I'm glad it's you. But I'm not ready. S-sorry.";
+            case COLD -> "No. ...Not now. Don't read anything into that.";
+            case GOSSIP -> "Okay, I did not see that coming. I need to think. Don't tell anyone you asked.";
+            case POLITE -> "I'm very fond of you. But I'd like a little more time, if you don't mind.";
+            case SPORTY -> "Ha. Okay. Not yet, alright? Don't give up on me.";
+        };
     }
 
     private static String no(Personality p) {
@@ -249,41 +295,58 @@ final class Romance {
             Talk.say(p, name, "I said I can't today. Sorry.", Talk.leave("Okay."));
             return;
         }
-        HANG_ASKED_ON[g] = s.day;
-        boolean yes = s.mystery().isYandere(g) || s.fondness[g] >= 3 || s.fondness[g] >= ASK_FROM && match(s, g) >= 0.5f && RANDOM.nextBoolean();
+        // A yes holds for the day, so backing out and asking again doesn't turn it into a no.
+        boolean yes = HANG_YES_ON[g] == s.day || s.fondness[g] >= 3 || s.fondness[g] >= ASK_FROM && match(s, g) >= 0.5f && RANDOM.nextBoolean();
         if (!yes) {
+            HANG_ASKED_ON[g] = s.day;
             Talk.say(p, name, busy(who.personality()), Talk.leave("Another time."));
             return;
         }
+        HANG_YES_ON[g] = s.day;
         Talk.say(p, name, "Sure. Where?",
                 Talk.option("Crepes by the station (¥" + CREPES_YEN + ").", q -> {
                     if (s.yen < CREPES_YEN) {
-                        Talk.say(q, name, "You've not got enough. She pays, and says it's fine. It's a bit awkward.", Talk.leave("Sorry."));
-                        hungOut(q, s, who, 0);
+                        hungOut(q, s, who, 0, () -> Talk.say(q, name, "You've not got enough. She pays, and says it's fine. It's a bit awkward.", Talk.leave("Sorry.")));
                         return;
                     }
                     s.yen -= CREPES_YEN;
                     Body.eat(q, s, 220, 80);
-                    hungOut(q, s, who, 1);
-                    Talk.say(q, name, "She gets strawberry and cream and makes you try it. You talk about nothing for an hour.", Talk.leave("That was nice."));
+                    hungOut(q, s, who, 1, () -> Talk.say(q, name, "She gets strawberry and cream and makes you try it. You talk about nothing for an hour and a half.", Talk.leave("That was nice.")));
                 }),
-                Talk.option("A walk along the sea.", q -> {
-                    hungOut(q, s, who, 1);
-                    Talk.say(q, name, "You walk to the end of the sea wall and back. She tells you about her family, a little.", Talk.leave("That was nice."));
-                }),
+                Talk.option("A walk along the sea.", q ->
+                        hungOut(q, s, who, 1, () -> Talk.say(q, name, "You walk to the end of the sea wall and back. She tells you about her family, a little.", Talk.leave("That was nice.")))),
                 Talk.leave("Actually, never mind."));
     }
 
-    private static void hungOut(ServerPlayerEntity p, RunState s, Student who, int fondness) {
+    private static void hungOut(ServerPlayerEntity p, RunState s, Student who, int fondness, Runnable then) {
         int g = who.id();
         if (Clothes.dressedUp(s, p)) fondness++;
         s.hungOutOn[g] = s.day;
         s.hangouts[g]++;
         s.fondness[g] = Math.min(5, s.fondness[g] + fondness);
         s.lastTalk[g] = s.day;
+        seenWith(s, g);
         s.markDirty();
         Kokuhaku.LOG.info("Hung out with {}: {} times, fondness {}", who.firstName(), s.hangouts[g], s.fondness[g]);
-        RunManager.skipMinutes(p.server, s, HANGOUT_MINUTES);
+        spend(p, s, HANGOUT_MINUTES, then);
+    }
+
+    /**
+     * The time out with her. Alone, the clock runs on and you're told how long it took.
+     * In a party the clock's shared, so, like a meal, it costs the others nothing: a moment's dark instead.
+     */
+    private static void spend(ServerPlayerEntity p, RunState s, int minutes, Runnable then) {
+        if (s.party.size() == 1) {
+            RunManager.skipMinutes(p.server, s, minutes, p);
+            then.run();
+            return;
+        }
+        RunManager.setBusy(p, true);
+        RunManager.sendBlack(p, RunManager.homeFor(p, s), LATER_TICKS, "Later.");
+        RunManager.later(LATER_TICKS, () -> {
+            RunManager.setBusy(p, false);
+            if (!p.isRemoved() && !RunManager.isOut(p) && s.status == RunState.Status.PLAYING) then.run();
+        });
     }
 
     private static String busy(Personality p) {
@@ -300,16 +363,24 @@ final class Romance {
     private static void together(ServerPlayerEntity p, RunState s, Student who) {
         String name = who.firstName();
         boolean free = s.dateOn != s.day && (!Schedule.isSchoolDay(s.day) || s.minute >= Schedule.AFTER_SCHOOL) && s.minute < RunManager.curfewOf(s) - LATEST_DATE;
+        // If she's heard who you were with, that comes first, date or no date.
+        String seen = Sweethearts.seenOpener(s, who);
         if (!free) {
-            Sweethearts.talk(p, s, who, s.dateOn == s.day ? "I had a really nice time. Get home safe, okay?" : s.minute < Schedule.AFTER_SCHOOL ? "Hey, you. Quick, before the bell." : "Come and find me later.",
+            Sweethearts.talk(p, s, who, seen != null ? seen : s.dateOn == s.day ? "I had a really nice time. Get home safe, okay?" : s.minute < Schedule.AFTER_SCHOOL ? "Hey, you. Quick, before the bell." : "It's getting late. Another day?",
                     Talk.option("I want to break up.", q -> breakUp(q, s, who)), Talk.leave("See you."));
             return;
         }
-        Talk.say(p, name, "Do you want to do something? Just us, for a couple of hours.",
-                Talk.option("Ramen by the station (¥" + DATE_YEN + ").", q -> {
+        Talk.say(p, name, (seen != null ? seen + "\n\n" : "") + "Do you want to do something? Just us, for a couple of hours.",
+                Talk.option("Soba by the station (¥" + DATE_YEN + ").", q -> {
+                    if (tooLate(q, s, who)) return;
+                    // The purse is shared, so check it now, not when the menu opened.
+                    if (s.yen < DATE_YEN) {
+                        Talk.say(q, name, "You count your change. It's not enough. She says the sea's free.", Talk.leave("Sorry."));
+                        return;
+                    }
                     s.yen -= DATE_YEN;
                     Body.eat(q, s, 600, 150);
-                    date(q, s, who, "You split the gyoza. She steals yours and thinks you don't notice.", 2);
+                    date(q, s, who, "You split the tempura. She steals yours and thinks you don't notice.", 2);
                 }),
                 Talk.option("Walk along the sea.", q -> date(q, s, who, "The wind takes most of what you say to each other. It doesn't seem to matter.", 1)),
                 Talk.option("Sit on the school roof.", q -> date(q, s, who, "She puts her head on your shoulder and counts the lights coming on across town.", 1)),
@@ -318,16 +389,23 @@ final class Romance {
 
     /** Two hours go by, and at the end of them she trusts you with something. */
     private static void date(ServerPlayerEntity p, RunState s, Student who, String scene, int fondness) {
+        if (tooLate(p, s, who)) return;
         boolean dressed = Clothes.dressedUp(s, p);
         s.dateOn = s.day;
         s.lastTalk[who.id()] = s.day;
         s.fondness[who.id()] = Math.min(5, s.fondness[who.id()] + fondness + (dressed ? 1 : 0));
         s.markDirty();
-        RunManager.skipMinutes(p.server, s, DATE_MINUTES);
         String told = RunManager.askedAboutStrange(s, who);
         RunManager.tellClueFound(p, s, who);
         String noticed = dressed ? "\"You dressed up.\" She looks pleased about it the whole time.\n\n" : "";
-        Talk.say(p, who.firstName(), noticed + scene + "\n\nOn the way back she goes quiet. \"Can I tell you something? " + told + "\"", Talk.leave("Thank you."));
+        spend(p, s, DATE_MINUTES, () -> Talk.say(p, who.firstName(), noticed + scene + "\n\nOn the way back she goes quiet. \"Can I tell you something? " + told + "\"", Talk.leave("Thank you.")));
+    }
+
+    /** Too close to curfew for two hours out: the clock kept going while you made up your mind. */
+    private static boolean tooLate(ServerPlayerEntity p, RunState s, Student who) {
+        if (s.minute < RunManager.curfewOf(s) - LATEST_DATE) return false;
+        Talk.say(p, who.firstName(), "It's getting late. Another day?", Talk.leave("Okay."));
+        return true;
     }
 
     private static void breakUp(ServerPlayerEntity p, RunState s, Student who) {
@@ -354,7 +432,7 @@ final class Romance {
             return;
         }
         int g = s.dating;
-        if (!datingHer(s) && s.day - s.lastTalk[g] >= NEGLECTED_AFTER) {
+        if (s.day - s.lastTalk[g] >= NEGLECTED_AFTER) {
             s.fondness[g]--;
             s.markDirty();
             if (s.fondness[g] <= ENDS_IT_AT) {

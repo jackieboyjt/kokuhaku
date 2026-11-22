@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
@@ -151,6 +152,9 @@ public class JumpscareScreen extends Screen {
     private long spokeAt = 0;
     private boolean greeted = false;
     private int devStep = 0;
+    /** The red flashes and the shaking words, kept to the clock rather than the frame rate. */
+    private long flashUntil = 0, nextFlash = 0, shakeAt = 0;
+    private int[] shakeX = new int[0], shakeY = new int[0];
 
     public JumpscareScreen(String personality) {
         super(Text.empty());
@@ -205,20 +209,31 @@ public class JumpscareScreen extends Screen {
         if (stage != Stage.ROOM || finalBlow || !speech.isEmpty() || stayAt != 0) return;
         int y = height - 62;
         if (pleading) {
-            addDrawableChild(new MenuButton(centred(PLEASE), y + 18, 220, 16, KokuhakuClient.menuText(PLEASE), b -> refused()));
+            addDrawableChild(option(PLEASE, y + 18, b -> refused()));
             return;
         }
         if (round >= ROUNDS) {
-            addDrawableChild(new MenuButton(centred(SWEET_TALK), y + 9, 220, 16, KokuhakuClient.menuText(SWEET_TALK), b -> sweetTalk()));
-            addDrawableChild(new MenuButton(centred(LAST_WORDS), y + 27, 220, 16, KokuhakuClient.menuText(LAST_WORDS), b -> swing(played() > 0 ? Monologues.LAST_TIME : voice.oh())));
-            if (ClientRun.party == 1) addDrawableChild(new MenuButton(centred(STAY), y + 45, 220, 16, KokuhakuClient.menuText(STAY), b -> agree()));
+            addDrawableChild(option(SWEET_TALK, y + 9, b -> sweetTalk()));
+            addDrawableChild(option(LAST_WORDS, y + 27, b -> swing(played() > 0 ? Monologues.LAST_TIME : voice.oh())));
+            if (ClientRun.party == 1) addDrawableChild(option(STAY, y + 45, b -> agree()));
             return;
         }
         List<Monologues.Exchange> choices = round == HER_ROUND ? voice.herQuestion() : pool.subList(round == 0 ? 0 : CHOICES, round == 0 ? CHOICES : CHOICES * 2);
         for (int i = 0; i < CHOICES; i++) {
             Monologues.Exchange line = choices.get(i);
-            addDrawableChild(new MenuButton(centred(line.ask()), y + i * 18, 220, 16, KokuhakuClient.menuText(line.ask()), b -> ask(line)));
+            addDrawableChild(option(line.ask(), y + i * 18, b -> ask(line)));
         }
+    }
+
+    /** Puts back what the room's figures read, for when the scene is taken away from under you. */
+    public static void reset() {
+        youFall = 0f;
+        batSwing = -1f;
+        closeness = 0f;
+        hearts = false;
+        batHeld = false;
+        herMindMade = false;
+        headTilt = 0f;
     }
 
     private static int played() {
@@ -238,8 +253,11 @@ public class JumpscareScreen extends Screen {
         client.setScreen(new EndingsScreen());
     }
 
-    private int centred(String label) {
-        return width / 2 - textRenderer.getWidth(KokuhakuClient.menuText(label)) / 2;
+    /** A choice only as wide as its words, centred, with room for the nudge when hovered. */
+    private MenuButton option(String label, int y, ButtonWidget.PressAction act) {
+        Text text = KokuhakuClient.menuText(label);
+        int w = textRenderer.getWidth(text);
+        return new MenuButton(width / 2 - w / 2, y, w + 8, 16, text, act);
     }
 
     /** She speaks first, each in her own way. The bubbly ones can't keep their hands off you. */
@@ -435,6 +453,11 @@ public class JumpscareScreen extends Screen {
         if (System.currentTimeMillis() < opened) return true;
         if (stage != Stage.ROOM) return true;
         long now = System.currentTimeMillis();
+        // Her choices aren't there until she's said hello.
+        if (!greeted) {
+            struggle(now);
+            return true;
+        }
         if (stillTalking(now)) {
             // Click through what she's saying. She won't mind. She'll say it again.
             if ((now - typedFrom) / TYPE_MS < said.length()) typedFrom = 0;
@@ -493,7 +516,8 @@ public class JumpscareScreen extends Screen {
                 }
             }
             case ROOM -> {
-                if (t > (stareOverride > 0 ? stareOverride : STARE_MS) && stayAt == 0) swing(voice.silence());
+                // Two minutes of you saying nothing, not two minutes since you woke.
+                if (now - lastAnswer > (stareOverride > 0 ? stareOverride : STARE_MS) && stayAt == 0 && !stillTalking(now)) swing(voice.silence());
             }
             case HEARTS -> {
                 if (inStage > HEARTS_MS) swing(said);
@@ -951,15 +975,33 @@ public class JumpscareScreen extends Screen {
         int edge = (int) (tension * 170);
         context.fillGradient(0, 0, width, height / 3, edge << 24 | 0x400008, 0x00400008);
         context.fillGradient(0, height * 2 / 3, width, height, 0x00400008, edge << 24 | 0x400008);
-        if (random.nextFloat() < tension * 0.12f) context.fill(0, 0, width, height, 0x50FF0000);
+        long now = System.currentTimeMillis();
+        if (now >= nextFlash && tension > 0) {
+            flashUntil = now + 60;
+            nextFlash = now + 250 + random.nextInt(Math.max(1, (int) (900 / Math.max(0.2f, tension))));
+        }
+        if (now < flashUntil) context.fill(0, 0, width, height, 0x50FF0000);
         boolean shouting = said.equals(said.toUpperCase());
         int shake = (int) (tension * (shouting ? 6 : 2));
         int count = (int) Math.min(said.length(), (System.currentTimeMillis() - spokeAt) / 1000f * 42f);
         var wrapped = textRenderer.wrapLines(KokuhakuClient.menuText(said.substring(0, count)), Math.min(width - 40, 360));
         int y = height - 56 - wrapped.size() * 11;
         context.fill(width / 2 - 190, y - 8, width / 2 + 190, y + wrapped.size() * 11 + 6, 0x90000000);
-        for (var line : wrapped) {
-            int dx = shake == 0 ? 0 : random.nextInt(shake * 2 + 1) - shake, dy = shake == 0 ? 0 : random.nextInt(shake + 1) - shake / 2;
+        // New offsets twenty times a second, whatever the frame rate.
+        if (now - shakeAt >= 50 || shakeX.length < wrapped.size()) {
+            shakeAt = now;
+            if (shakeX.length < wrapped.size()) {
+                shakeX = new int[wrapped.size()];
+                shakeY = new int[wrapped.size()];
+            }
+            for (int i = 0; i < shakeX.length; i++) {
+                shakeX[i] = shake == 0 ? 0 : random.nextInt(shake * 2 + 1) - shake;
+                shakeY[i] = shake == 0 ? 0 : random.nextInt(shake + 1) - shake / 2;
+            }
+        }
+        for (int i = 0; i < wrapped.size(); i++) {
+            var line = wrapped.get(i);
+            int dx = shake == 0 ? 0 : shakeX[i], dy = shake == 0 ? 0 : shakeY[i];
             context.drawCenteredTextWithShadow(textRenderer, line, width / 2 + dx, y + dy, shouting ? 0xFFFF3040 : 0xFFE8D0D4);
             y += 11;
         }

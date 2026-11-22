@@ -66,7 +66,7 @@ public final class KokuhakuMac extends JPanel {
     private static final Color RED = new Color(176, 24, 42), RED_LIT = new Color(206, 34, 54);
     private static final int W = 960, H = 620, TITLE_H = 36, SIDE_W = 210, MOST_SHOWN = 7;
     /** This launcher's own version: a newer release on GitHub replaces it. */
-    private static final String LAUNCHER_VERSION = "1.4.3";
+    private static final String LAUNCHER_VERSION = "1.5.0";
     private static final String RELEASES = "https://api.github.com/repos/jackieboyjt/kokuhaku/releases";
     /** Name, detail, "ready" or not, and what changed. */
     private volatile String[][] VERSIONS = {{"Kokuhaku " + LAUNCHER_VERSION, "1.20.1  \u00b7  this one", "ready", "Looking for updates..."}, {"Next update", "1.20.1  \u00b7  WIP", "", ""}};
@@ -350,10 +350,14 @@ public final class KokuhakuMac extends JPanel {
         int[] mine = number(LAUNCHER_VERSION);
         List<String[]> list = new ArrayList<>();
         int me = 0;
+        boolean matched = false;
         for (java.util.Map<String, Object> r : found.subList(0, Math.min(MOST_SHOWN, found.size()))) {
             int[] v = number(text(r.get("tag_name")));
             int c = compare(v, mine);
-            if (c == 0) me = list.size();
+            if (c == 0) {
+                me = list.size();
+                matched = true;
+            }
             String notes = plain(text(r.get("body")));
             java.util.regex.Matcher dated = java.util.regex.Pattern.compile("<!--\\s*date:\\s*(\\d{4}-\\d{2}-\\d{2})\\s*-->").matcher(text(r.get("body")));
             String date = dated.find() ? dated.group(1) + "T12:00:00Z" : text(r.get("published_at"));
@@ -365,7 +369,10 @@ public final class KokuhakuMac extends JPanel {
         }
         list.add(new String[]{"Next update", "1.20.1  \u00b7  WIP", "", ""});
         int pick = me;
+        boolean listed = matched, newestOlder = compare(number(text(found.get(0).get("tag_name"))), mine) < 0;
         SwingUtilities.invokeLater(() -> {
+            // Not on GitHub yet (a build being tried out): it stays at the top, as this one.
+            if (!listed) list.add(0, new String[]{"Kokuhaku " + LAUNCHER_VERSION, "1.20.1  ·  this one", "ready", newestOlder ? "This is the newest version." : VERSIONS[0][3]});
             VERSIONS = list.toArray(new String[0][]);
             selected = pick;
             notesScroll = 0;
@@ -385,7 +392,8 @@ public final class KokuhakuMac extends JPanel {
         }
         if (want.size() < 2) return;
         String version = shown(number(text(release.get("tag_name"))));
-        busy = true;
+        // Not halfway through a launch: it can wait for next time.
+        if (!claim()) return;
         Path dir = updates(), staging = dir.resolveSibling("incoming");
         try {
             deleteAll(staging);
@@ -579,9 +587,15 @@ public final class KokuhakuMac extends JPanel {
         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, message, TRUE_NAME, JOptionPane.INFORMATION_MESSAGE));
     }
 
-    private void launch() {
-        if (busy) return;
+    /** Busy, if it wasn't already: a launch and an update never run at once. */
+    private synchronized boolean claim() {
+        if (busy) return false;
         busy = true;
+        return true;
+    }
+
+    private void launch() {
+        if (!claim()) return;
         say("Getting ready", -1f);
         new Thread(() -> {
             Path prism = findPrism();
@@ -638,18 +652,38 @@ public final class KokuhakuMac extends JPanel {
         }
     }
 
-    /** The game's own Java is running: Prism starts it through its own entry point, then Fabric. */
+    /** A game's Java: Prism starts it through its own entry point, then Fabric. */
+    private static boolean isGame(ProcessHandle p) {
+        return p.info().commandLine().map(c -> c.contains("KnotClient") || c.contains("org.prismlauncher.EntryPoint")).orElse(false);
+    }
+
+    private static boolean isPrismProcess(ProcessHandle p) {
+        return p.info().command().map(c -> c.endsWith("/prismlauncher")).orElse(false);
+    }
+
+    /** This game's own Java is running: its command line names this instance's folder. */
     private static boolean gameRunning() {
-        return ProcessHandle.allProcesses().anyMatch(p -> p.info().commandLine().map(c -> c.contains("KnotClient") || c.contains("org.prismlauncher.EntryPoint")).orElse(false));
+        List<String> paths = new ArrayList<>(List.of(instance().toString()));
+        try {
+            paths.add(instance().toRealPath().toString());
+        } catch (IOException ignored) {
+        }
+        return ProcessHandle.allProcesses().anyMatch(p -> isGame(p) && p.info().commandLine().map(c -> paths.stream().anyMatch(c::contains)).orElse(false));
+    }
+
+    /** A game Prism itself is running, for this instance or another. */
+    private static boolean prismGameRunning() {
+        return ProcessHandle.allProcesses().anyMatch(p -> isGame(p) && p.parent().map(KokuhakuMac::isPrismProcess).orElse(false));
     }
 
     /** Prism ignores a launch request while it's already open, so an idle Prism has to quit first. */
     private static boolean quitPrism() {
-        boolean open = ProcessHandle.allProcesses().anyMatch(p -> p.info().command().map(c -> c.endsWith("/prismlauncher")).orElse(false));
+        boolean open = ProcessHandle.allProcesses().anyMatch(KokuhakuMac::isPrismProcess);
         if (!open) return true;
-        if (gameRunning()) return false;
+        if (prismGameRunning()) return false;
         try {
-            new ProcessBuilder("osascript", "-e", "quit app \"Prism Launcher\"").start().waitFor();
+            // By its id, not its name: the bundle may be called PrismLauncher.app or Prism.app.
+            new ProcessBuilder("osascript", "-e", "quit app id \"org.prismlauncher.PrismLauncher\"").start().waitFor();
         } catch (IOException | InterruptedException e) {
             return false;
         }

@@ -55,7 +55,9 @@ public final class Story {
             String text = note(i);
             Kokuhaku.LOG.info("A note in a different hand: {}", text);
             Talk.say(p, "In your coat pocket", "A folded note. It isn't her writing. \"" + text + "\"", Talk.option("Keep it.", q -> {
-                s.notes.add("A note in a different hand: \"" + text + "\"");
+                // The bag is shared, so in a party only the first one kept goes in.
+                String line = "A note in a different hand: \"" + text + "\"";
+                if (!s.notes.contains(line)) s.notes.add(line);
                 s.markDirty();
             }));
         }

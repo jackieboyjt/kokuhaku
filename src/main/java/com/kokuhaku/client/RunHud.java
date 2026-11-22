@@ -123,7 +123,7 @@ public final class RunHud {
             context.drawTextWithShadow(tr, day, w - tr.getWidth(day) - 8, 8, 0xFFD8D0D4);
             context.drawTextWithShadow(tr, time, w - tr.getWidth(time) - 8, 20, 0xFF9A9AA2);
         }
-        Text money = KokuhakuClient.menuText(ClientRun.yen < 0 ? "-¥" + (-ClientRun.yen) : "¥" + ClientRun.yen);
+        Text money = KokuhakuClient.menuText(Schedule.yen(ClientRun.yen));
         if (free) context.drawTextWithShadow(tr, money, w - tr.getWidth(money) - 8, 32, ClientRun.yen < 0 ? 0xFFD01C30 : 0xFFD8B860);
         if (free && !ClientRun.ghost) {
             renderNeed(context, tr, "Food", ClientRun.food, w, 45, 0xFFD8A060);
@@ -178,8 +178,12 @@ public final class RunHud {
             context.getMatrices().pop();
         }
         if (!a.subtitle().isEmpty()) {
+            // Long lines wrap, or both ends fall off a narrow screen.
             int y = a.title().isEmpty() ? 32 : 54;
-            context.drawCenteredTextWithShadow(tr, KokuhakuClient.menuText(a.subtitle()), w / 2, y, a8 | 0xB0A8AC);
+            for (var line : tr.wrapLines(KokuhakuClient.menuText(a.subtitle()), Math.min(w - 40, 420))) {
+                context.drawCenteredTextWithShadow(tr, line, w / 2, y, a8 | 0xB0A8AC);
+                y += 11;
+            }
         }
     }
 }

@@ -111,6 +111,8 @@ public final class Town {
     public final Map<String, Room> rooms = new HashMap<>();
 
     public final Map<BlockPos, Job> jobBoards = new HashMap<>();
+    /** Every vending machine, by its lower block. */
+    public final List<BlockPos> vendingMachines = new ArrayList<>();
     /** Haruka's diary pages, where they lie. */
     public final Map<BlockPos, Integer> pages = new HashMap<>();
     /** The one place that says what the name means. */
@@ -166,11 +168,12 @@ public final class Town {
         for (Traits.Club club : Traits.Club.values()) notice(place(Routines.clubPlace(club)), -2, "club:" + club.name());
         notice(place("shops"), -2, "shop");
         notice(place("courtyard_w"), 2, "shop");
-        // Places to eat and something to wear, on the shop fronts along the street, a stand on the beach and one by the station.
+        // Places to eat and something to wear, on the shop fronts along the street, a stand on the beach and one on the station wall.
         onWall(new BlockPos(-702, 23, -124), Direction.NORTH, "food:ramen");
         onWall(new BlockPos(-698, 23, -124), Direction.NORTH, "clothes");
         post(new BlockPos(-724, 23, -216), Direction.SOUTH, "food:beach");
-        post(new BlockPos(-691, 23, -66), Direction.EAST, "food:soba");
+        // On the wall, not a post, so the pavement stays clear.
+        onWall(new BlockPos(-692, 23, -66), Direction.EAST, "food:soba");
         for (District d : District.values()) {
             List<Home> here = homes.stream().filter(h -> h.district() == d).toList();
             double x = here.stream().mapToInt(h -> h.bedHead().getX()).average().orElse(0), z = here.stream().mapToInt(h -> h.bedHead().getZ()).average().orElse(0);
@@ -514,7 +517,10 @@ public final class Town {
 
     private void vending(String place, int dx, int dz) {
         BlockPos p = graph.pos(place(place));
+        vendingMachines.add(new BlockPos(p.getX() + dx, p.getY(), p.getZ() + dz));
         set(p.getX() + dx, p.getY(), p.getZ() + dz, ModBlocks.VENDING_MACHINE.getDefaultState());
+        // Its top half, so it can be clicked where you're looking.
+        set(p.getX() + dx, p.getY() + 1, p.getZ() + dz, ModBlocks.VENDING_MACHINE_TOP.getDefaultState());
     }
 
     /** A board at eye height beside a spot. */

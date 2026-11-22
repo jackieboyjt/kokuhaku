@@ -10,9 +10,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 
-import java.util.HashSet;
 import java.util.Random;
-import java.util.Set;
 
 /**
  * Something to do between clues. Anyone can ask you to find what they've lost.
@@ -24,7 +22,7 @@ final class Favours {
     private static final int FIRST_DAY = 2, PAYS = 400, FONDNESS = 2;
     /** What's gone missing, where it is, and how you'd say that. */
     private static final String[][] LOST = {
-            {"pencil case", "center:Library", "the library"}, {"gym towel", "gym", "the gym"}, {"lunch money", "center:Cafeteria", "the cafeteria"},
+            {"pencil case", "center:Library", "the library"}, {"gym towel", "gym", "the gym"}, {"lunch money", "center:Cafeteria", "the canteen"},
             {"umbrella", "station", "the station"}, {"sketchbook", "center:06", "the art room"}, {"hair clip", "park", "the park"},
             {"notebook", "foyer", "the entrance hall"}, {"bus pass", "shops", "the shops"}, {"good pen", "center:Darkroom", "the darkroom"}};
     private static final Random RANDOM = new Random();
@@ -33,7 +31,6 @@ final class Favours {
     private static boolean found = false;
     private static BlockPos at = null;
     private static String thing = "";
-    private static final Set<Integer> done = new HashSet<>();
 
     private Favours() {
     }
@@ -42,11 +39,10 @@ final class Favours {
         asker = -1;
         found = false;
         at = null;
-        done.clear();
     }
 
     static boolean canAsk(RunState s, Student who) {
-        return asker < 0 && s.day >= FIRST_DAY && !done.contains(who.id()) && !Living.active(s);
+        return asker < 0 && s.day >= FIRST_DAY && !s.favoured.contains(who.id()) && !Living.active(s);
     }
 
     /** Where to go next, for the arrow. */
@@ -92,14 +88,14 @@ final class Favours {
 
     /** They're so relieved they tell you something they'd been keeping to themselves. */
     static void handIn(ServerPlayerEntity p, RunState s, Student who) {
-        done.add(who.id());
+        s.favoured.add(who.id());
         asker = -1;
         found = false;
         at = null;
         s.yen += PAYS;
         if (who.female()) s.fondness[who.id()] = Math.min(5, s.fondness[who.id()] + FONDNESS);
         s.known.add(who.id());
-        Clue held = s.mystery().clues.stream().filter(c -> c.witness() == who.id() && !s.found.contains(c.id())).findFirst().orElse(null);
+        Clue held = s.mystery().clues.stream().filter(c -> c.witness() == who.id() && !s.found.contains(c.id()) && !s.burned.contains(c.id())).findFirst().orElse(null);
         s.markDirty();
         String line = "You found it! Thank you. Here, for your trouble: ¥" + PAYS + ".";
         if (held != null) {

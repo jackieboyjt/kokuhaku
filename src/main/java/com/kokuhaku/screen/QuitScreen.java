@@ -2,6 +2,7 @@ package com.kokuhaku.screen;
 
 import com.kokuhaku.KokuhakuClient;
 import com.kokuhaku.client.ClientRun;
+import com.kokuhaku.client.Party;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
@@ -40,8 +41,13 @@ public class QuitScreen extends Screen {
         context.getMatrices().scale(1.5f, 1.5f, 1f);
         context.drawCenteredTextWithShadow(textRenderer, title, 0, 0, 0xFFE8E2E4);
         context.getMatrices().pop();
-        boolean host = client.isIntegratedServerRunning() && ClientRun.party > 1;
-        context.drawCenteredTextWithShadow(textRenderer, Text.literal(host ? "This ends the game for your whole party." : "Nothing here is saved."),
+        // In the lobby the party count isn't known yet, so count who's in the room.
+        boolean host = client.isIntegratedServerRunning() && (ClientRun.party > 1 || Party.members.size() > 1);
+        // A run you're hosting saves every morning; anything else doesn't.
+        String line = host ? "This ends the game for your whole party."
+                : ClientRun.active && !Party.isGuest(client) ? "Continue puts you back in bed this morning."
+                : "Nothing here is saved.";
+        context.drawCenteredTextWithShadow(textRenderer, Text.literal(line),
                 width / 2, height / 2 - 14, 0xFF8C7C80);
         super.render(context, mouseX, mouseY, delta);
     }

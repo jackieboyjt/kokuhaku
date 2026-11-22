@@ -125,6 +125,10 @@ public class PhoneScreen extends Screen {
     /** Where she's typing (from the server), until when, and the pattern of her stopping and starting. */
     private String typingChat;
     private long typingEnd, typingSeed;
+    /** Someone typing in the class chat: who, whether they're dead, until when, and their pattern. */
+    private String chatTypingWho;
+    private boolean chatTypingDead;
+    private long chatTypingEnd, chatTypingSeed;
     /** A ghost's words so far, as places in Phone.GHOST_WORDS, and where each word's pill was drawn. */
     private final List<Integer> composing = new ArrayList<>();
     private final List<int[]> wordBoxes = new ArrayList<>();
@@ -166,6 +170,7 @@ public class PhoneScreen extends Screen {
         messages = data.getList("Messages", NbtElement.COMPOUND_TYPE);
         replies = data.getList("Replies", NbtElement.STRING_TYPE).stream().map(NbtElement::asString).toList();
         replyIn = data.getString("ReplyIn");
+        String herBefore = her;
         her = data.contains("Her") ? data.getString("Her") : UNKNOWN;
         herStatus = data.getString("HerStatus");
         typingWhat = data.getInt("TypingWhat");
@@ -174,6 +179,10 @@ public class PhoneScreen extends Screen {
         typingChat = data.contains("TypingIn") ? data.getString("TypingIn") : null;
         typingEnd = System.currentTimeMillis() + data.getInt("TypingFor");
         typingSeed = data.getLong("TypingSeed");
+        chatTypingWho = data.contains("ChatTypingWho") ? data.getString("ChatTypingWho") : null;
+        chatTypingDead = data.getBoolean("ChatTypingDead");
+        chatTypingEnd = System.currentTimeMillis() + data.getInt("ChatTypingFor");
+        chatTypingSeed = data.getLong("ChatTypingSeed");
         String openName = open == null ? null : open.name;
 
         if (first) {
@@ -220,6 +229,9 @@ public class PhoneScreen extends Screen {
             openChat(byName.get(devChat));
             openName = devChat;
         }
+        // Her contact renamed itself: stay in her chat under the new name.
+        if (openName != null && herBefore != null && openName.equals(herBefore) && !her.equals(herBefore)
+                && !byName.containsKey(openName) && byName.containsKey(her)) openName = her;
         if (awaitingAfter >= 0 && openName != null) {
             Chat c = byName.get(openName);
             if (c != null && c.lastIncoming >= awaitingAfter) awaitingAfter = -1;
@@ -267,6 +279,12 @@ public class PhoneScreen extends Screen {
         return (typingWhat == Phone.VOICE ? "recording audio" : "typing") + ELLIPSIS;
     }
 
+    /** Who's typing in the class chat, filtered already: the dead come up as Unknown, unless you're one of them. */
+    private String classTypingLabel() {
+        String who = chatTypingWho == null ? "" : chatTypingWho;
+        return (chatTypingDead && !ghost() ? "Unknown" : GhostGlyphs.filter(who, who.hashCode())) + " is typing" + ELLIPSIS;
+    }
+
     private boolean typing() {
         return open != null && typingIn(open.name);
     }
@@ -277,9 +295,15 @@ public class PhoneScreen extends Screen {
      * starts. The pattern comes from the server's seed, so it's the same on every refresh.
      */
     private boolean typingIn(String chat) {
-        long left = typingEnd - System.currentTimeMillis();
-        if (typingChat == null || !typingChat.equals(chat) || left <= 0) return false;
-        Random r = new Random(typingSeed);
+        if (CLASS_CHAT.equals(chat)) return chatTypingWho != null && bursting(chatTypingEnd - System.currentTimeMillis(), chatTypingSeed);
+        if (typingChat == null || !typingChat.equals(chat)) return false;
+        return bursting(typingEnd - System.currentTimeMillis(), typingSeed);
+    }
+
+    /** Typing or not, this many milliseconds before it's due, on the pattern this seed gives. */
+    private static boolean bursting(long left, long seed) {
+        if (left <= 0) return false;
+        Random r = new Random(seed);
         long at = 0;
         for (boolean on = true; ; on = !on) {
             at += on ? 1200 + r.nextInt(1300) : 600 + r.nextInt(1400);
@@ -684,8 +708,14 @@ public class PhoneScreen extends Screen {
             }
             ctx.drawText(textRenderer, name, SX + 33, cy - 8, TEXT, false);
             boolean typing = typing();
-            String sub = burst && g > 0.6f ? "watching" : typing ? typingLabel() : subtitle(open);
-            drawSmall(ctx, GhostGlyphs.filter(sub, sub.hashCode()), SX + 33, cy + 3, typing ? GREEN : META);
+            // Someone in the class chat: the name's filtered on its own, as their messages are.
+            boolean classTyping = typing && !(burst && g > 0.6f) && CLASS_CHAT.equals(open.name);
+            String sub = burst && g > 0.6f ? "watching" : classTyping ? classTypingLabel() : typing ? typingLabel() : subtitle(open);
+            // Keep it on the phone: lose "last seen " before the time gets cut.
+            int subMax = SR - 12 - (SX + 33);
+            if (smallWidth(sub) > subMax && sub.startsWith("last seen ")) sub = sub.substring("last seen ".length());
+            sub = trimSmall(sub, subMax);
+            drawSmall(ctx, classTyping ? sub : GhostGlyphs.filter(sub, sub.hashCode()), SX + 33, cy + 3, typing ? GREEN : META);
         }
         for (int i = 0; i < 3; i++) ctx.fill(SR - 8, cy - 4 + i * 3, SR - 6, cy - 2 + i * 3, TEXT);
 
@@ -734,7 +764,8 @@ public class PhoneScreen extends Screen {
             ctx.drawText(textRenderer, trim(c.shown, SR - 11 - whenW - x), x, y + 5, isHer(c) ? 0xFFF0A0A8 : TEXT, false);
             int px = x;
             if (typingIn(c.name)) {
-                drawSmall(ctx, GhostGlyphs.filter(typingLabel(), 4), px, y + 18, GREEN);
+                String label = CLASS_CHAT.equals(c.name) ? classTypingLabel() : GhostGlyphs.filter(typingLabel(), 4);
+                drawSmall(ctx, trimSmall(label, SR - 22 - px), px, y + 18, GREEN);
             } else {
                 if (last.mine() && !last.deleted()) {
                     ticks(ctx, px, y + 18, tickState(c, last));

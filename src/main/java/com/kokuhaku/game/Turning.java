@@ -1,14 +1,16 @@
 package com.kokuhaku.game;
 
+import com.kokuhaku.Difficulty;
 import com.kokuhaku.game.Mystery.Clue;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 /**
- * The month has a shape. At the start of each week something changes that
- * doesn't change back, so day 20 can't feel like day 3 with higher stakes.
+ * The fortnight has a shape. Every few days something changes that
+ * doesn't change back, so day 12 can't feel like day 3 with higher stakes.
+ * The figure starts hunting on day 7 (Stalker), so the notice goes up then.
  */
 final class Turning {
-    private static final int ASSEMBLY = 8, FIGURE = 15, KEY = 22, WITNESS = 29;
+    private static final int ASSEMBLY = 4, FIGURE = 7, KEY = 10, WITNESS = 12;
 
     private static int doneOn = 0;
     private static String title = "", line = "";
@@ -24,7 +26,8 @@ final class Turning {
     /** Someone alive who still knows something you never asked them about. */
     private static int witness(RunState s) {
         for (Clue c : s.mystery().clues) {
-            if (c.kind() == Mystery.Kind.TRAIT && c.witness() >= 0 && !s.found.contains(c.id()) && !s.dead.contains(c.witness())) return c.witness();
+            // Only someone who could tell you today, so her message is never a dead end.
+            if (c.kind() == Mystery.Kind.TRAIT && c.witness() >= 0 && c.day() <= s.day && !s.found.contains(c.id()) && !s.burned.contains(c.id()) && !s.atScene.contains(c.id()) && !s.dead.contains(c.witness())) return c.witness();
         }
         return -1;
     }
@@ -34,6 +37,8 @@ final class Turning {
         title = line = "";
         switch (s.day) {
             case ASSEMBLY -> {
+                // No assembly when the school's shut.
+                if (!Schedule.isSchoolDay(s.day)) break;
                 title = "The Assembly";
                 int w = witness(s);
                 if (w < 0) {
@@ -46,7 +51,7 @@ final class Turning {
             }
             case FIGURE -> {
                 title = "After Dark";
-                line = "A notice at the gate: go straight home. Something's been seen on the streets, and it doesn't just stand there now.";
+                line = "A notice on every lamp post: go straight home. Something's been seen on the streets, and it doesn't just stand there now.";
             }
             case KEY -> {
                 title = "The Spare Key";
@@ -55,7 +60,8 @@ final class Turning {
             }
             case WITNESS -> {
                 title = "Nobody Answers";
-                int w = witness(s);
+                // On Impossible every clue counts, so nobody is marked for knowing one.
+                int w = s.difficulty == Difficulty.IMPOSSIBLE ? -1 : witness(s);
                 if (w < 0) {
                     line = "The police have stopped coming. Nobody at school says why.";
                     break;

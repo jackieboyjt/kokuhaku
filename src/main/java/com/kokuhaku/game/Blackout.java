@@ -8,6 +8,8 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
@@ -32,6 +34,7 @@ final class Blackout {
         if (!due(s)) return;
         Kokuhaku.LOG.info("Blackout");
         Shadow.saw(s, "The whole town went dark at seven. She'd been in the substation since lunch.");
+        List<ServerPlayerEntity> outside = new ArrayList<>();
         for (ServerPlayerEntity p : living) {
             p.addStatusEffect(new StatusEffectInstance(StatusEffects.DARKNESS, DARK_TICKS, 0, false, false));
             p.playSound(SoundEvents.BLOCK_BEACON_DEACTIVATE, SoundCategory.MASTER, 1f, 0.6f);
@@ -39,8 +42,14 @@ final class Blackout {
             if (RunManager.isHomeNow(p, s)) hide(p, s);
             else {
                 RunManager.tell(p, "The power's gone.", "Every light in town, all at once. Get home.");
-                Stalker.comeFor(p, s, town);
+                outside.add(p);
             }
+        }
+        // There's only one of her. She picks one of you, and if there's no way to
+        // come at that one, she tries the next.
+        Collections.shuffle(outside, RANDOM);
+        for (ServerPlayerEntity p : outside) {
+            if (Stalker.comeFor(p, s, town)) break;
         }
     }
 
@@ -51,7 +60,7 @@ final class Blackout {
             boolean found = i == wrong;
             options[i] = Talk.option(PLACES[i], q -> {
                 if (found) {
-                    s.fondness[s.freeYandere()] = Math.min(5, s.fondness[s.freeYandere()] + 1);
+                    s.longed(1);
                     s.notes.add("The night the power went, someone found you in the dark. They didn't do anything. They said goodnight.");
                     s.markDirty();
                     Talk.say(q, "In the dark", "The steps stop right beside you. Someone crouches down. You can hear them smiling. \"Goodnight.\" Then they're gone, and the lights don't come back until morning.", Talk.leave("..."));

@@ -22,8 +22,11 @@ import net.minecraft.util.math.Vec3d;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * The first time you walk into the hall at lunch: up to the counter, Mrs. Mori
@@ -76,19 +79,21 @@ final class LunchScene {
     private static final boolean SHOTS = "1".equals(System.getenv("KOKUHAKU_SHOTS")) && "lunchscene".equals(System.getenv("KOKUHAKU_STAGE"));
     private static final int SHOT_EVERY = 90;
     private static Scene scene = null;
-    private static int lastDay = 0, ticks = 0, nextClatter = 0, missed = 0, thanked = 0;
+    private static int lastDay = 0, ticks = 0, nextClatter = 0;
     private static boolean cameBack = false, wasLunch = false;
     static final int MISSED_FROM = 2;
     private static final int STOPPED_COMING = 3, TIP_EVERY = 3;
-    /** What you've had, meal by meal: she notices. */
-    private static final int[] ordered = new int[MEALS.size()];
+    // Days missed, thanks and what you've had (she notices) are kept with the run: lunchMissed, lunchThanked, lunchOrdered.
+    /** Everyone who's had lunch today, table or not. */
+    private static final Set<UUID> fed = new HashSet<>();
+    private static int fedOn = 0;
 
     private LunchScene() {
     }
 
     /** School days in a row you haven't turned up. */
-    static int missed() {
-        return missed;
+    static int missed(RunState s) {
+        return s.lunchMissed;
     }
 
     static boolean cameBack() {
@@ -100,9 +105,9 @@ final class LunchScene {
         lastDay = 0;
         ticks = 0;
         nextClatter = 0;
-        missed = thanked = 0;
         cameBack = wasLunch = false;
-        java.util.Arrays.fill(ordered, 0);
+        fed.clear();
+        fedOn = 0;
         LunchHall.clear();
     }
 
@@ -125,8 +130,9 @@ final class LunchScene {
             if (now) wasLunch = true;
             else if (wasLunch) {
                 wasLunch = false;
-                if (lastDay == s.day) missed = 0;
-                else if (++missed == STOPPED_COMING && !Living.active(s)) Shadow.saw(s, "You stopped coming to lunch. She noticed before your friends did.");
+                if (lastDay == s.day) s.lunchMissed = 0;
+                else if (++s.lunchMissed == STOPPED_COMING && !Living.active(s)) Shadow.saw(s, "You stopped coming to lunch. She noticed before your friends did.");
+                s.markDirty();
             }
             if (!now && LunchHall.laid()) {
                 LunchHall.clearTables();
@@ -138,6 +144,7 @@ final class LunchScene {
             LunchHall.talkAmongThemselves(server, s, scene == null ? null : scene.player);
             if (ticks >= nextClatter) clatter(server, s, town);
         }
+        if (ticks % CHECK_EVERY == 0 && lastDay == s.day && lunchtime(s) && !Living.active(s) && !Kept.on(s)) feedTheRest(s, living);
         if (scene != null) {
             run(s, town);
             return;
@@ -151,6 +158,49 @@ final class LunchScene {
         }
     }
 
+    /** Who's been to the counter today. */
+    private static Set<UUID> fedToday(RunState s) {
+        if (fedOn != s.day) {
+            fed.clear();
+            fedOn = s.day;
+        }
+        return fed;
+    }
+
+    /** Only one of you gets the table. Everyone else still gets served: just the counter, and off you go. */
+    private static void feedTheRest(RunState s, List<ServerPlayerEntity> living) {
+        StudentEntity cook = LunchHall.cook();
+        if (cook == null) return;
+        Set<UUID> done = fedToday(s);
+        for (ServerPlayerEntity p : living) {
+            if (done.contains(p.getUuid()) || active(p) || !inHall(p.getPos()) || p.hasVehicle() || RunManager.inScene(p) || WalkScene.active(p) || Talk.waiting(p)) continue;
+            done.add(p.getUuid());
+            List<Talk.Option> options = new ArrayList<>();
+            for (Meal meal : MEALS) {
+                if (meal.price() > s.yen) continue;
+                options.add(Talk.option(meal.label() + " (¥" + meal.price() + ")", q -> {
+                    RunState now = RunManager.state(q.server);
+                    // Someone else may have just spent it.
+                    if (meal.price() > now.yen) {
+                        Body.eat(q, now, 0, 300);
+                        Talk.say(q, COOK, "You haven't got enough for that now, love. Water, then.", cook.getId());
+                        return;
+                    }
+                    now.yen -= meal.price();
+                    Body.eat(q, now, 150 + meal.price(), 150);
+                    now.markDirty();
+                    Talk.say(q, COOK, meal.reply(), cook.getId());
+                }));
+            }
+            options.add(Talk.option("Just some water, please.", q -> {
+                Body.eat(q, RunManager.state(q.server), 0, 300);
+                Talk.say(q, COOK, "Water. And they wonder why you're all so pale. Here.", cook.getId());
+            }));
+            String line = s.day >= WORRIES_FROM_DAY ? WORRIED : GREETINGS.get(new Random(s.seed ^ s.day).nextInt(GREETINGS.size()));
+            Talk.say(p, COOK, line, cook.getId(), options.toArray(new Talk.Option[0]));
+        }
+    }
+
     /** Forks and trays, from somewhere across the room. */
     private static void clatter(MinecraftServer server, RunState s, Town town) {
         nextClatter = ticks + (CLATTER_FROM + RANDOM.nextInt(CLATTER_MORE)) * (1 + s.dead.size() / 3);
@@ -161,8 +211,9 @@ final class LunchScene {
 
     private static void start(ServerPlayerEntity p, RunState s, Town town) {
         lastDay = s.day;
-        cameBack = missed >= MISSED_FROM;
-        missed = 0;
+        cameBack = s.lunchMissed >= MISSED_FROM;
+        s.lunchMissed = 0;
+        s.markDirty();
         Scene c = new Scene();
         c.player = p;
         c.seat = LunchHall.yours(s, town);
@@ -170,6 +221,7 @@ final class LunchScene {
             for (StudentEntity e : RunManager.studentsOf(p.server)) if (e.getSkin() == id) c.girls.add(e);
         }
         if (c.girls.size() < 2) return;
+        fedToday(s).add(p.getUuid());
         scene = c;
         RunManager.setBusy(p, true);
         Kokuhaku.LOG.info("Lunch with {}", c.girls.stream().map(e -> Roster.get(e.getSkin()).firstName()).toList());
@@ -184,7 +236,7 @@ final class LunchScene {
         List<Vec3d> way = WalkRoute.fit(p.getServerWorld(), points, p);
         if (way.size() < 2) return 0;
         int length = Math.max(10, (int) (new PathWalker(way).length() / BLOCKS_PER_TICK));
-        RunManager.sendWalk(p, way, length);
+        RunManager.sendWalk(p, way, length, false);
         return length;
     }
 
@@ -239,6 +291,7 @@ final class LunchScene {
         List<Talk.Option> options = new ArrayList<>();
         // Have the same thing often enough and she stops asking.
         Meal usual = null;
+        int[] ordered = s.lunchOrdered;
         for (int i = 0; i < MEALS.size(); i++) if (ordered[i] >= USUAL_AFTER && MEALS.get(i).price() <= s.yen && (usual == null || ordered[i] > ordered[MEALS.indexOf(usual)])) usual = MEALS.get(i);
         if (usual != null) {
             Meal same = usual;
@@ -260,7 +313,7 @@ final class LunchScene {
         if (meal != null) {
             s.yen -= meal.price();
             Body.eat(p, s, 150 + meal.price(), 150);
-            ordered[MEALS.indexOf(meal)]++;
+            s.lunchOrdered[MEALS.indexOf(meal)]++;
             s.markDirty();
         }
         if (meal == null) Body.eat(p, s, 0, 300);
@@ -279,7 +332,8 @@ final class LunchScene {
         ServerPlayerEntity p = c.player;
         StudentEntity cook = LunchHall.cook();
         int id = cook == null ? -1 : cook.getId();
-        var clue = ++thanked % TIP_EVERY != 0 ? null : s.mystery().clues.stream().filter(k -> k.witness() >= 0 && k.day() <= s.day && !s.found.contains(k.id())).findFirst().orElse(null);
+        s.markDirty();
+        var clue = ++s.lunchThanked % TIP_EVERY != 0 ? null : s.mystery().clues.stream().filter(k -> k.witness() >= 0 && k.day() <= s.day && !s.found.contains(k.id()) && !s.burned.contains(k.id())).findFirst().orElse(null);
         String line = clue == null ? "Well. Aren't you polite. Go on, before it gets cold." : "You're the only one who ever says that. ...I hear things back here, you know. Nobody sees a dinner lady.\n\n\"" + clue.text() + "\"";
         Talk.say(p, COOK, line, id);
         if (clue != null) RunManager.tellClueFound(p, s, Roster.get(clue.witness()));
@@ -309,7 +363,8 @@ final class LunchScene {
         // Everyone's watching whoever's talking, except anyone who'd rather watch you.
         for (int i = 0; i < c.girls.size(); i++) {
             StudentEntity e = c.girls.get(i);
-            look(e, watching(c, i, s.mystery().isYandere(e.getSkin())));
+            // Only on a day she can't keep her eyes off you, and she isn't the only one who ever has one.
+            look(e, watching(c, i, e.isStaring()));
             e.setWalkTalking(c.speaker == i && c.wait > 0);
         }
         if (c.age % EAT_EVERY == 0 && c.meal != null && c.bites < BITES.length) bite(c, s, town);
@@ -404,6 +459,8 @@ final class LunchScene {
             Answer a = step.answers().get(i);
             options[i] = Talk.option(a.label(), q -> {
                 RunState s = RunManager.state(q.server);
+                // Lunch with her and talking is talking to her.
+                if (by.getSkin() == s.dating) Romance.talked(s, s.dating);
                 if (a.fondness() != 0 && by.getSkin() < Roster.GIRLS) {
                     s.fondness[by.getSkin()] = Math.max(-5, Math.min(5, s.fondness[by.getSkin()] + a.fondness()));
                     s.markDirty();

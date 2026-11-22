@@ -89,6 +89,8 @@ public final class Cutscene {
     private static float rideFrom = 0f;
     private static float struggling = 0f;
     private static long lastFrame;
+    /** When the grab's jolt last faded, so it fades by the clock and not by the frame. */
+    private static long grabFrame;
     public static int speaker = -1;
     /** When the camera goes back to the window. */
     public static long speakerUntil = 0;
@@ -97,6 +99,12 @@ public final class Cutscene {
     /** Sent as the text of a ward scene: it's the middle of the night, and the room is dark. */
     public static final String LIGHTS_OUT = "dark";
     private static boolean lightsOut = false;
+    /** Sent as the text of a drag: friends are still out there, so she's only a shape. */
+    public static final String MASKED = "masked";
+    private static boolean masked = false;
+    /** Sent as the text of a walk nobody can skip: down the slope, or to the lunch counter. */
+    public static final String NO_SKIP = "noskip";
+    private static boolean skippable = true;
     private static final float STRIDE_BOB = 0.05f, STRIDE_ROLL = 0.35f, STRIDE_SWAY = 0.018f;
     /** Which time this is, and whose hand. */
     public static int strikes = 0, herSkin = 0;
@@ -116,6 +124,16 @@ public final class Cutscene {
         return text;
     }
 
+    /** Dragged down the hall while the others are still alive: you don't get to see who it is. */
+    public static boolean dragMasked() {
+        return type == Type.DRAG && masked;
+    }
+
+    /** Whether Space does anything on this walk. */
+    public static boolean skippable() {
+        return skippable;
+    }
+
     public static void start(Type t, Vec3d cam, Vec3d look, Vec3d head, Vec3d foot, int ticks, String news) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (System.getenv("KOKUHAKU_BOT") != null) com.kokuhaku.Kokuhaku.LOG.info("Scene {} starts, {} ms after the last one ended, replacing {}", t, type == null ? System.currentTimeMillis() - lastStopped : 0, type);
@@ -127,7 +145,9 @@ public final class Cutscene {
         bedHead = head;
         bedFoot = foot;
         lightsOut = LIGHTS_OUT.equals(news);
-        text = lightsOut ? "" : news;
+        masked = t == Type.DRAG && MASKED.equals(news);
+        skippable = !NO_SKIP.equals(news);
+        text = lightsOut || masked || !skippable ? "" : news;
         if (client.player != null) {
             startEye = client.player.getCameraPosVec(1f);
             startYaw = client.player.getYaw();
@@ -148,6 +168,7 @@ public final class Cutscene {
         }
         heldSince = 0;
         if (t == Type.GRAB) {
+            grabFrame = System.currentTimeMillis();
             client.setScreen(new GrabScreen((int) head.x, (float) head.y));
             return;
         }
@@ -193,8 +214,8 @@ public final class Cutscene {
         Vec3d way = herPos.subtract(standSpot).normalize();
         Vec3d at = standSpot.lerp(herPos, MenuRoom.pulled(p)).subtract(way.multiply(DRAG_HEAD_BACK)).add(0, DRAG_HEAD_HIGH, 0);
         float pull = heave();
-        double bump = Math.abs(Math.sin(System.currentTimeMillis() / 180.0)) * DRAG_BUMP * pull;
-        roll = (float) Math.sin(System.currentTimeMillis() / 520.0) * 3f + pull * 1.5f;
+        double bump = Math.abs(Math.sin(System.currentTimeMillis() / 180.0)) * DRAG_BUMP * pull * bobbing();
+        roll = (float) (Math.sin(System.currentTimeMillis() / 520.0) * 3f * bobbing()) + pull * 1.5f;
         return new double[]{at.x, at.y + bump, at.z, yawOf(way), DRAG_PITCH - pull * 3f};
     }
 
@@ -243,6 +264,14 @@ public final class Cutscene {
     }
 
     public static void walkClock(int age) {
+        // Below zero: the walk was cut short, so it's over here too, even if it was waiting for a train.
+        if (age < 0) {
+            if (type == Type.WALK) {
+                heldSince = 0;
+                stop();
+            }
+            return;
+        }
         if (type != Type.WALK || heldSince != 0) return;
         long wanted = System.currentTimeMillis() - age * 50L;
         startMs += (long) ((wanted - startMs) * CLOCK_CATCH_UP);
@@ -251,6 +280,7 @@ public final class Cutscene {
     /** A jolt of the head, each time you get a key right. */
     public static void struggle() {
         struggling = 1f;
+        grabFrame = System.currentTimeMillis();
     }
 
     /** How far your arm has come up into view, and how hard it's shaking. */
@@ -280,6 +310,17 @@ public final class Cutscene {
     public static float progress() {
         long now = heldSince != 0 ? heldSince : System.currentTimeMillis();
         return MathHelper.clamp((now - startMs) / (float) durationMs, 0f, 1f);
+    }
+
+    /** How long the scene has been running, stopping while it's held. */
+    public static long elapsedMs() {
+        long now = heldSince != 0 ? heldSince : System.currentTimeMillis();
+        return now - startMs;
+    }
+
+    /** How long the scene runs. */
+    public static long durationMs() {
+        return durationMs;
     }
 
     /** How black the screen is. */
@@ -621,9 +662,9 @@ public final class Cutscene {
         double stride = (now - startMs) / 215.0;
         // Going down a slope this steep you're gliding, not stepping.
         boolean walking = heldSince == 0 && walker.drop(p) < 0.3;
-        double bob = walking ? Math.abs(Math.sin(stride)) * STRIDE_BOB : 0;
-        roll = walking ? (float) Math.sin(stride) * STRIDE_ROLL : 0f;
-        Vec3d sway = Vec3d.fromPolar(0f, walkYaw + 90f).multiply(walking ? Math.sin(stride) * STRIDE_SWAY : 0);
+        double bob = walking ? Math.abs(Math.sin(stride)) * STRIDE_BOB * bobbing() : 0;
+        roll = walking ? (float) (Math.sin(stride) * STRIDE_ROLL * bobbing()) : 0f;
+        Vec3d sway = Vec3d.fromPolar(0f, walkYaw + 90f).multiply(walking ? Math.sin(stride) * STRIDE_SWAY * bobbing() : 0);
         return new double[]{at.x + sway.x, at.y + STANDING_EYE + bob, at.z + sway.z, walkYaw, pitch};
     }
 
@@ -651,8 +692,13 @@ public final class Cutscene {
         float turn = 1f - (float) Math.exp(-(now - lastFrame) / 340.0);
         lastFrame = now;
         walkYaw += MathHelper.wrapDegrees(wanted - walkYaw) * turn;
-        double rattle = Math.sin(now / 95.0) * RIDE_RATTLE;
+        double rattle = Math.sin(now / 95.0) * RIDE_RATTLE * bobbing();
         return new double[]{at.x, at.y + STANDING_EYE + rattle, at.z, walkYaw, 2f};
+    }
+
+    /** The game's own view bobbing switch: with it off, your steps don't rock the camera here either. */
+    private static double bobbing() {
+        return MinecraftClient.getInstance().options.getBobView().getValue() ? 1 : 0;
     }
 
     /** Where the camera is this frame: {x, y, z, yaw, pitch}. */
@@ -669,7 +715,9 @@ public final class Cutscene {
         if (type == Type.GRAB) {
             // Dragged backwards, head pulled up, fighting it. You can't turn round.
             long now = System.currentTimeMillis();
-            struggling *= 0.9f;
+            long dt = Math.max(0, Math.min(100, now - grabFrame));
+            grabFrame = now;
+            struggling *= (float) Math.exp(-dt / 95.0);
             float wrench = (float) Math.sin(now / 37.0) * struggling * 7f, heave = (float) Math.sin(now / 280.0) * 1.6f;
             roll = heave + wrench * 0.6f;
             Vec3d back = Vec3d.fromPolar(0f, startYaw).multiply(-0.25 - Math.sin(now / 400.0) * 0.05);
@@ -693,7 +741,7 @@ public final class Cutscene {
         roll = MathHelper.lerp(t, a.roll(), b.roll());
         if (type == Type.PEEK && p > walkStart() && p < walkEnd()) {
             // A sprinting stride.
-            pos = pos.add(0, Math.abs(Math.sin((System.currentTimeMillis() - startMs) / 100.0)) * 0.1 - 0.05, 0);
+            pos = pos.add(0, (Math.abs(Math.sin((System.currentTimeMillis() - startMs) / 100.0)) * 0.1 - 0.05) * bobbing(), 0);
         }
         if (type == Type.BAT || type == Type.CAR) {
             // The whole world jolts with the hit, then settles.

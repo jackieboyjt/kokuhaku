@@ -50,7 +50,7 @@ public class ProfileScreen extends Screen {
     }
 
     private static String ratio(int wins, int losses) {
-        return losses == 0 ? wins + ".00" : String.format("%.2f", wins / (double) losses);
+        return losses == 0 ? wins + ".00" : String.format(java.util.Locale.ROOT, "%.2f", wins / (double) losses);
     }
 
     @Override

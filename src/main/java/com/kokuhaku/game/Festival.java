@@ -36,7 +36,7 @@ import java.util.Random;
 import java.util.Set;
 
 /**
- * The School Festival, on the second Saturday. The whole school's on the sports
+ * The School Festival, on the first Saturday. The whole school's on the sports
  * field, the stalls are out, and at seven there are fireworks. Who you watch
  * them with is the most important thing you'll do all month, because someone
  * is watching who you choose.
@@ -52,11 +52,16 @@ public final class Festival {
     private static final String[] NAMES = {"Takoyaki", "Fortunes", "Haunted House", "Photo Booth"};
     private static final int[] COLOURS = {0xE0283C, 0xF4C430, 0x4FA8E8, 0xFFFFFF, 0xF080B0, 0x70E070};
     private static final Random RANDOM = new Random();
+    // What the unknown number sends after the fireworks. The first is never sent: drawing it only after
+    // someone else would clear her. Both branches draw from index 1 onwards.
+    private static final String[] SAW_YOU = {
+            "I saw you. She had her hand so close to yours.",
+            "I saw you up there. You looked so happy.",
+            "I was watching the whole time."};
 
     private static final Map<BlockPos, Integer> stalls = new HashMap<>();
     private static final List<BlockPos> placed = new ArrayList<>();
     private static final Set<Integer> done = new HashSet<>();
-    private static int safeUntil = 0;
     private static boolean chose = false;
 
     private Festival() {
@@ -66,7 +71,6 @@ public final class Festival {
         stalls.clear();
         placed.clear();
         done.clear();
-        safeUntil = 0;
         chose = false;
     }
 
@@ -76,7 +80,7 @@ public final class Festival {
 
     /** She's happy, for now. */
     static boolean safeTonight(RunState s) {
-        return s.day <= safeUntil;
+        return s.day <= s.festivalSafeUntil;
     }
 
     private static void put(ServerWorld world, BlockPos at, BlockState state) {
@@ -158,6 +162,10 @@ public final class Festival {
         if (kind == null) return false;
         if (s.minute < OPENS) {
             RunManager.tell(p, "", "They're still setting up.");
+            return true;
+        }
+        if (s.minute >= CLOSES) {
+            RunManager.tell(p, "", "The stall's shut. Someone's left the lantern on.");
             return true;
         }
         switch (kind) {
@@ -249,7 +257,10 @@ public final class Festival {
                         done.remove(3);
                         return;
                     }
-                    s.notes.add("Photo strip: you, alone, three times. In the fourth, someone's beside you, cropped at the shoulder. " + Roster.get(s.freeYandere()).hair().phrase(Math.max(1, s.difficulty.ordinal())));
+                    Student her = Roster.get(s.freeYandere());
+                    Traits.Phrased seen = s.difficulty == Difficulty.EASY ? her.hair()
+                            : s.mystery().trace(s, List.<Traits.Phrased>of(her.hair(), her.length()), RANDOM);
+                    s.notes.add("Photo strip: you, alone, three times. In the fourth, someone's beside you, cropped at the shoulder. " + seen.phrase(Math.max(1, s.difficulty.ordinal())));
                     s.markDirty();
                     Shadow.saw(s, "She stepped into the last frame of your photo strip.");
                     RunManager.tell(q, "", "There were four shots. You only remember being alone for three.");
@@ -284,15 +295,19 @@ public final class Festival {
         for (int i = 0; i < ROCKETS; i++) RunManager.later(i * ROCKET_EVERY, () -> launch(server.getOverworld(), town));
         Kokuhaku.LOG.info("Fireworks");
         BlockPos middle = town.graph.pos(town.place("field"));
+        boolean anyFar = false, anyNear = false;
         for (ServerPlayerEntity p : living) {
             if (p.getBlockPos().getManhattanDistance(middle) > REACH) {
                 RunManager.tell(p, "", "Far off over the school, the sky starts to flash.");
-                Phone.fromHer(server, s, "You didn't come. I saved you a place.");
+                anyFar = true;
                 continue;
             }
+            anyNear = true;
             RunManager.tell(p, "Fireworks", "Everyone's looking at the sky. Almost everyone.");
             pickPartner(p, s);
         }
+        // The phone's shared, so she says it once, and only if nobody came.
+        if (anyFar && !anyNear) Phone.fromHer(server, s, "You didn't come. I saved you a place.");
     }
 
     private static void pickPartner(ServerPlayerEntity p, RunState s) {
@@ -345,22 +360,28 @@ public final class Festival {
     private static void withHer(ServerPlayerEntity p, RunState s, int girl, int speaker) {
         Student who = Roster.get(girl);
         s.fondness[girl] = Math.min(5, s.fondness[girl] + 3);
-        safeUntil = s.day + SAFE_NIGHTS - 1;
+        s.festivalSafeUntil = s.day + SAFE_NIGHTS - 1;
         s.markDirty();
-        Kokuhaku.LOG.info("Fireworks with her: safe until day {}", safeUntil);
+        // Only for the bot: the log is one click away in the launcher, and this line would give her away.
+        if (System.getenv("KOKUHAKU_BOT") != null) Kokuhaku.LOG.info("Fireworks with her: safe until day {}", s.festivalSafeUntil);
         Shadow.saw(s, "You chose her for the fireworks. She kept the ticket stub, and left you alone for three nights.");
         Talk.say(p, who.firstName(), "You picked me. Out of everyone. ...I'm going to remember this for the rest of your life.", speaker, Talk.leave("..."));
+        // She texts too. She was watching, just from closer.
+        RunManager.later(600, () -> Phone.fromHer(p.server, s, SAW_YOU[1 + RANDOM.nextInt(SAW_YOU.length - 1)]));
     }
 
     /** She's scared, and she tells you what she saw. Somebody else saw you ask. */
     private static void withSomeoneElse(ServerPlayerEntity p, RunState s, int girl, int speaker) {
         Student who = Roster.get(girl);
-        int her = s.freeYandere();
         s.fondness[girl] = Math.min(5, s.fondness[girl] + 2);
-        s.fondness[her] = Math.max(-5, s.fondness[her] - 2);
+        // She was on the roof. It doesn't show on her.
+        s.longed(-2);
         if (s.difficulty.ordinal() >= Difficulty.HARD.ordinal()) s.livingVictim = girl;
-        Clue held = s.mystery().clues.stream().filter(c -> c.witness() == who.id() && !s.found.contains(c.id())).findFirst().orElse(null);
-        String line = "Thanks for asking me. Honestly. I didn't want to be on my own tonight.";
+        Clue held = s.mystery().clues.stream().filter(c -> c.witness() == who.id() && !s.found.contains(c.id()) && !s.burned.contains(c.id())).findFirst().orElse(null);
+        // Some of them are just as thrilled to be asked.
+        String line = RANDOM.nextInt(3) == 0
+                ? "You picked me. Out of everyone. ...I'm going to remember this for the rest of my life."
+                : "Thanks for asking me. Honestly. I didn't want to be on my own tonight.";
         if (held != null) {
             s.found.add(held.id());
             Whispers.foundClue();
@@ -370,13 +391,13 @@ public final class Festival {
         s.markDirty();
         Shadow.saw(s, "You stood next to " + who.firstName() + " for the fireworks. She watched you the whole time, from the top of the school.");
         Talk.say(p, who.firstName(), line, speaker, Talk.leave("I'm glad I did."));
-        RunManager.later(600, () -> Phone.fromHer(p.server, s, "I saw you. She had her hand so close to yours."));
+        // Same lines as after her: one only someone else could get would clear the girl beside you.
+        RunManager.later(600, () -> Phone.fromHer(p.server, s, SAW_YOU[1 + RANDOM.nextInt(SAW_YOU.length - 1)]));
     }
 
     /** Nobody takes the space beside you. Then somebody does. */
     private static void alone(ServerPlayerEntity p, RunState s) {
-        int her = s.freeYandere();
-        s.fondness[her] = Math.min(5, s.fondness[her] + 1);
+        s.longed(1);
         s.notes.add(Grab.torn(s).replace(STRUGGLE, "Slipped into your pocket: "));
         s.markDirty();
         Whispers.foundClue();

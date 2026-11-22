@@ -54,7 +54,9 @@ public class SettingsScreen extends Screen {
         }
 
         private void at(double mouseX) {
-            set.accept(MathHelper.clamp((mouseX - getX() - WIDE / 2.0) / (WIDE / 2.0), 0, 1));
+            // The same track renderButton draws, so the fill ends under the cursor.
+            int left = getX() + WIDE / 2, right = getX() + WIDE - 34;
+            set.accept(MathHelper.clamp((mouseX - left) / (double) (right - left), 0, 1));
         }
 
         @Override

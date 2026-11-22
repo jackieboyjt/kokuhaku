@@ -15,8 +15,8 @@ public final class Dialogue {
     public static final int ABOUT = 0, STRANGE = 1, CHAT = 2, TRUST = 3;
 
     private static final Map<Personality, List<String>> GREETINGS = Map.of(
-            Personality.CHEERFUL, List.of("Hiii! What's up?", "Oh, it's you! Hey!", "Morning! Or afternoon? Whatever, hi!", "You look like you need a snack. Hi.", "There you are! I was so bored.", "Hey hey! Sit with us at lunch sometime?"),
-            Personality.SHY, List.of("O-oh... hi.", "...Um. Hello.", "You're talking to me? ...Hi.", "S-sorry, I didn't see you there.", "Oh. It's you. Um, hi.", "...Did I do something wrong?"),
+            Personality.CHEERFUL, List.of("Hiii! What's up?", "Oh, it's you! Hey!", "Morning! Or afternoon? Whatever, hi!", "You look like you need a snack. Hi.", "Oh! I was just thinking about you! About the homework, I mean.","There you are! I was so bored.", "Hey hey! Sit with us at lunch sometime?"),
+            Personality.SHY, List.of("O-oh... hi.", "...Um. Hello.", "You're talking to me? ...Hi.", "S-sorry, I didn't see you there.", "Oh. It's you. Um, hi.", "...Did I do something wrong?", "You were at the gate this morning. ...I just noticed, that's all."),
             Personality.COLD, List.of("What.", "Make it quick.", "...Yes?", "I'm busy.", "You again.", "Did you need something, or are you just standing there?"),
             Personality.GOSSIP, List.of("Oh, perfect timing. I've got news.", "Hey! Did you hear? No? Come here.", "You look like someone who needs to hear something.", "Don't tell anyone I told you this, okay? Well. Anything yet.", "Finally, someone interesting.", "I was just talking about you. Kidding. Mostly."),
             Personality.POLITE, List.of("Hello. Is everything alright?", "Good day. Can I help with something?", "Oh, hello. Do you need something?", "Pardon me, were you looking for me?", "It's nice to see you.", "Good to see you. Have you eaten?"),
@@ -24,11 +24,11 @@ public final class Dialogue {
     );
 
     private static final Map<Personality, List<String>> SMALL_TALK = Map.of(
-            Personality.CHEERFUL, List.of("Strange? Nope! Everything's great!", "The cafeteria ran out of melon bread. That's strange AND tragic.", "Only that it's somehow already this late in the term.", "Someone keeps leaving flowers by the gate. Cute, right?"),
+            Personality.CHEERFUL, List.of("Strange? Nope! Everything's great!", "The canteen ran out of melon bread. That's strange AND tragic.", "Only that it's somehow already this late in the term.", "Someone keeps leaving flowers by the gate. Cute, right?"),
             Personality.SHY, List.of("N-no... I don't really notice things. Sorry.", "I... try not to look at people too much.", "Sometimes it feels like someone's behind me. It's probably nothing.", "I stayed in the library. It's quiet there."),
             Personality.COLD, List.of("No.", "Nothing I'd tell you.", "People asking questions. That's strange.", "Mind your own business. It's safer."),
             Personality.GOSSIP, List.of("Not about that. But did you know the art teacher's getting married?", "Nothing yet. But I'm listening. I'm always listening.", "Everyone's being weird lately. Nobody's saying why.", "Somebody cried in the second floor bathroom. I'll find out who."),
-            Personality.POLITE, List.of("I'm afraid not. I'll tell you if I see anything.", "Nothing comes to mind, sorry.", "Only that the corridor lights flicker in the evenings.", "I'd rather not spread rumours, if that's alright."),
+            Personality.POLITE, List.of("I'm afraid not. I'll tell you if I see anything.", "Nothing comes to mind, sorry.", "Only that the corridor lights flicker in the evenings.", "I'd rather not spread rumours, if that's alright.", "No. Everything's exactly as it should be, I think."),
             Personality.SPORTY, List.of("Only that I keep beating everyone at practice!", "Nah. I'm too busy running to notice stuff.", "Saw someone at the track at night once. Weird time to train.", "Someone's been taking the bats out of the equipment shed.")
     );
 
@@ -80,7 +80,8 @@ public final class Dialogue {
 
     public static String greeting(Student s, boolean isHer, Difficulty d, int minute, String lastDead) {
         if (isHer && d == Difficulty.EASY) return pick(HER_GREETING_EASY);
-        if (isHer && d == Difficulty.MEDIUM) return pick(HER_GREETING_MEDIUM);
+        // On Medium it only slips out now and then, so one odd line is a hint, not proof.
+        if (isHer && d == Difficulty.MEDIUM && RANDOM.nextFloat() < 0.3f) return pick(HER_GREETING_MEDIUM);
         if (lastDead != null && RANDOM.nextInt(3) == 0) return String.format(pick(AFTER_DEATH), lastDead);
         List<String> pool = new ArrayList<>(GREETINGS.get(s.personality()));
         if (minute < Schedule.HOMEROOM) pool.addAll(MORNING);
@@ -103,7 +104,7 @@ public final class Dialogue {
 
     public static String smallTalk(Student s, boolean isHer, Difficulty d) {
         if (isHer && d == Difficulty.EASY) return pick(HER_STRANGE_EASY);
-        if (isHer && d == Difficulty.MEDIUM) return pick(HER_STRANGE_MEDIUM);
+        if (isHer && d == Difficulty.MEDIUM && RANDOM.nextFloat() < 0.3f) return pick(HER_STRANGE_MEDIUM);
         return pick(SMALL_TALK.get(s.personality()));
     }
 

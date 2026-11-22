@@ -249,6 +249,15 @@ public class DifficultyScreen extends Screen {
     @Override
     protected void init() {
         int x = Math.max(24, width / 12);
+        if (smashing) {
+            // Mid-swing: put back only what she hasn't broken yet, not a fresh set.
+            addDrawableChild(impossibleButton);
+            for (int i = beat; i < beats.size(); i++) {
+                MenuButton b = beats.get(i).smash();
+                if (b != null && !(i == beat && hitThisBeat)) addDrawableChild(b);
+            }
+            return;
+        }
         int y = height / 2 - 50;
         others.clear();
         for (Difficulty d : Difficulty.values()) {
@@ -274,7 +283,12 @@ public class DifficultyScreen extends Screen {
     }
 
     private boolean alone() {
-        return Party.members.size() <= 1;
+        return playing() <= 1;
+    }
+
+    /** Spectators only watch, so they don't make it a party. */
+    private int playing() {
+        return (int) Math.max(1, Party.members.stream().filter(m -> !m.spectator()).count());
     }
 
     private void start(Difficulty d) {
@@ -378,11 +392,11 @@ public class DifficultyScreen extends Screen {
             context.drawTextWithShadow(textRenderer, Text.literal("Nobody but them will know who."), line, height / 2 + 64, 0xFF9A9AA2);
             context.drawTextWithShadow(textRenderer, Text.literal("No voice chat in this mode."), line, height / 2 + 76, 0xFF9A9AA2);
         }
-        int party = Math.max(1, Party.members.size());
+        int party = playing();
         if (party > 1) {
             int extra = party - 1;
             context.drawTextWithShadow(textRenderer, Text.literal("Party of " + party + ": " + Roster.girlsFor(party) + " girls, " + Roster.boysFor(party)
-                    + " boys, " + party + " yanderes, +" + extra + (extra == 1 ? " guess" : " guesses")), x, height / 2 + 66, 0xFF9A9AA2);
+                    + " boys, " + party + " yanderes, +" + extra + (extra == 1 ? " guess" : " guesses")), x, height / 2 + 106, 0xFF9A9AA2);
         }
 
         int y = height / 2 - 50;

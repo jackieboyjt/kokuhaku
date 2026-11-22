@@ -66,6 +66,10 @@ public class Kokuhaku implements ModInitializer {
             }
         });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            // Before anything else, so a different build can tell before it reads a packet it doesn't know.
+            net.minecraft.network.PacketByteBuf hello = net.fabricmc.fabric.api.networking.v1.PacketByteBufs.create();
+            hello.writeVarInt(Net.PROTOCOL);
+            ServerPlayNetworking.send(handler.player, Net.HELLO, hello);
             if (RunManager.isRun(server)) {
                 RunManager.onJoin(handler.player);
             }
@@ -175,11 +179,16 @@ public class Kokuhaku implements ModInitializer {
             String name = buf.readString();
             server.execute(() -> RunManager.callBack(player, name));
         });
+        ServerPlayNetworking.registerGlobalReceiver(Net.MARK, (server, player, handler, buf, sender) -> {
+            int girl = buf.readVarInt(), mark = buf.readVarInt();
+            String memo = buf.readString(64);
+            server.execute(() -> RunManager.mark(player, girl, mark, memo));
+        });
         ServerPlayNetworking.registerGlobalReceiver(Net.OPEN_BAG, (server, player, handler, buf, sender) ->
                 server.execute(() -> RunManager.openBag(player)));
-        ServerPlayNetworking.registerGlobalReceiver(Net.ACCUSE, (server, player, handler, buf, sender) -> {
+        ServerPlayNetworking.registerGlobalReceiver(Net.ASK_ABOUT, (server, player, handler, buf, sender) -> {
             int girl = buf.readVarInt();
-            server.execute(() -> RunManager.accuse(player, girl));
+            server.execute(() -> RunManager.askAbout(player, girl));
         });
     }
 }

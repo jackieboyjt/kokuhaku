@@ -1,6 +1,7 @@
 package com.kokuhaku.game;
 
 import com.kokuhaku.entity.StudentEntity;
+import com.kokuhaku.world.town.Town;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.Vec3d;
 
@@ -48,12 +49,41 @@ final class Noticed {
             int id = e.getSkin();
             if (id >= Roster.GIRLS || s.dead.contains(id)) continue;
             String name = Roster.get(id).firstName();
-            boolean staring = e.isStaring() || RANDOM.nextFloat() < CHANCE_INNOCENT_GLANCE;
+            float glance = CHANCE_INNOCENT_GLANCE * (Secrets.keeper(s, Secrets.Kind.CRUSH) == id ? 8 : 1);
+            boolean staring = e.isStaring() || RANDOM.nextFloat() < glance;
             if (staring && !e.isTalking() && youSee(p, e, SEEN_AT) && seen.add("look" + s.day + id)) {
                 write(p, s, "Day " + s.day + ": you looked up and " + name + " was already looking at you.");
             }
+            Secrets.Kind secret = Secrets.kindNow(s, id);
+            if (secret != null && goingThere(s, e, id) && youSee(p, e, SEEN_AT) && seen.add("secret" + s.day + id)) {
+                String what = switch (secret) {
+                    case HOSPITAL -> ", going into the hospital. She didn't see you.";
+                    case NIGHT_WALKS -> ", on her own " + ("park".equals(Secrets.nightPlace(s, id)) ? "in the park" : "on the beach") + ". It's late for that.";
+                    case CRUSH -> ", at the end of " + whoseRoad(s, p) + ". She looked away when you saw her.";
+                };
+                write(p, s, "Day " + s.day + ", " + Schedule.clock(s.minute) + ": " + name + what);
+            }
             followed(p, s, e, name);
         }
+    }
+
+    /** Only if she's really on her way there, not still at home or held up somewhere. */
+    private static boolean goingThere(RunState s, StudentEntity e, int id) {
+        Town town = RunManager.town();
+        Routines.Target t = town == null ? null : Secrets.out(id, s, town);
+        return t != null && e.isHeadingTo(t.key() + "@" + t.node())
+                && e.squaredDistanceTo(Vec3d.ofCenter(town.graph.pos(t.node()))) < 8 * 8; // nearly there, not just setting off
+    }
+
+    /** The crush stands on one player's road a day: yours only if it's yours. */
+    private static String whoseRoad(RunState s, ServerPlayerEntity p) {
+        int slot = Secrets.crushSlot(s);
+        if (s.party.indexOf(p.getUuid()) == slot) return "your road";
+        if (slot < s.party.size() && p.getServer() != null) {
+            ServerPlayerEntity owner = p.getServer().getPlayerManager().getPlayer(s.party.get(slot));
+            if (owner != null) return owner.getName().getString() + "'s road";
+        }
+        return "someone's road";
     }
 
     /** Stay near someone after school, and you'll see where they end up. */

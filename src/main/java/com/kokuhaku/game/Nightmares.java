@@ -1,5 +1,6 @@
 package com.kokuhaku.game;
 
+import com.kokuhaku.Difficulty;
 import com.kokuhaku.Kokuhaku;
 import com.kokuhaku.game.Roster.Student;
 import com.kokuhaku.world.town.Town;
@@ -74,7 +75,12 @@ final class Nightmares {
 
     /** The door was open and you drew attention to yourself. She doesn't need asking twice. */
     private static boolean takenBy(ServerPlayerEntity p, RunState s) {
-        return !s.doorLocked[0] && RANDOM.nextFloat() < RunManager.abductChance(s) * EXTRA_DANGER;
+        return !RunManager.doorHolds(s, p) && RANDOM.nextFloat() < RunManager.abductChance(s) * EXTRA_DANGER;
+    }
+
+    /** On Easy, what you saw is the first; harder, whichever fits more than her. */
+    private static Traits.Phrased trace(RunState s, Traits.Phrased first, Traits.Phrased second) {
+        return s.difficulty == Difficulty.EASY ? first : s.mystery().trace(s, List.of(first, second), RANDOM);
     }
 
     private static void scene(ServerPlayerEntity p, RunState s, Terror t, Runnable morning) {
@@ -85,7 +91,7 @@ final class Nightmares {
             case HANDLE -> Talk.say(p, name, "You're awake and you don't know why. Then you hear it. Your door handle is turning, very slowly, all the way down. It stops. It stays there.",
                     Talk.option("Hold your breath.", q -> Talk.say(q, name, "It stays there for a long time. Then, just as slowly, it comes back up. The floorboards don't creak. Whoever it is knows which ones to miss.", Talk.option("...", goOn))),
                     Talk.option("Look at the gap under the door.", q -> {
-                        learn(q, s, "Under your door at 3:12: two feet, not moving. " + her.length().phrase(1));
+                        learn(q, s, "Under your door at 3:12: two feet, not moving. " + trace(s, her.length(), her.hair()).phrase(1));
                         Talk.say(q, name, "Two shadows in the strip of light. Feet. They don't move. Then something slides out of the dark and stops by your bed: a single hair. You'll look at it in the morning.", Talk.option("...", goOn));
                     }),
                     Talk.option("Say \"Who's there?\"", q -> {
@@ -93,14 +99,14 @@ final class Nightmares {
                             RunManager.takenInTheNight(q, s);
                             return;
                         }
-                        s.fondness[her.id()] = Math.min(5, s.fondness[her.id()] + 1);
+                        s.longed(1);
                         s.markDirty();
                         Talk.say(q, name, "Silence. And then, right against the door, so quiet you might have imagined it: \"You said something to me.\" Somebody on the other side is crying with happiness.", Talk.option("...", goOn));
                     }));
             case WINDOW -> Talk.say(p, name, "Tapping. Fingernails on the glass, slow and even. Your curtains are closed. Your room is not on the ground floor.",
                     Talk.option("Pull the covers over your head.", q -> Talk.say(q, name, "It goes on until the birds start. It never once speeds up.", Talk.option("...", goOn))),
                     Talk.option("Open the curtains.", q -> {
-                        learn(q, s, "At your window at 3:12: " + her.hair().phrase(1));
+                        learn(q, s, "At your window at 3:12: " + trace(s, her.hair(), her.length()).phrase(1));
                         Talk.say(q, name, "Nobody. Only your own breath on the glass, and, on the outside, a word written with a finger. It says your name. There's a hair stuck in it.", Talk.option("...", goOn));
                     }));
             case UNDER_BED -> Talk.say(p, name, "You're nearly asleep when you feel it. A small, patient breath, from under the bed. It isn't yours. It's slower than yours.",
@@ -112,7 +118,7 @@ final class Nightmares {
             case BESIDE_YOU -> Talk.say(p, name, "Someone is lying next to you. You can feel the bed dip. An arm comes slowly round you. It's very gentle. A voice in your hair says: \"Don't turn round. Not yet.\"",
                     Talk.option("Turn round.", q -> Talk.say(q, name, "There's nobody there. The other side of the bed is warm, and the pillow has been kissed.", Talk.option("...", goOn))),
                     Talk.option("Don't turn round.", q -> {
-                        s.fondness[her.id()] = Math.min(5, s.fondness[her.id()] + 2);
+                        s.longed(2);
                         s.markDirty();
                         Talk.say(q, name, "\"Good,\" it says, and the arm tightens, just a little, and then you're alone. You will never be sure you were awake.", Talk.option("...", goOn));
                     }));

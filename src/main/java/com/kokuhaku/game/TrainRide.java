@@ -26,6 +26,8 @@ final class TrainRide {
     private static final int FOLLOW_EVERY = 5, LONGEST_RIDE = 2600, FADE = 14, RIDE_TICKS = 3000, OUT_OF_THE_WAY = 16;
     /** Ticks after the train pulls away that each of the later lines comes. */
     private static final int HELLO = 40, FIRST_BEAT = 30, SECOND_BEAT = 260;
+    /** The ride on screen runs on the clock, not on ticks: on a slow server, get off before it ends. */
+    private static final long LONGEST_RIDE_MS = RIDE_TICKS * 50L - 10_000;
 
     private static Stage stage = Stage.NONE;
     private static final List<ServerPlayerEntity> riders = new ArrayList<>();
@@ -34,7 +36,10 @@ final class TrainRide {
     static int walkingWith = -1;
     private static Vec3d startedAt;
     private static int age, departedAt;
+    private static long boardedAt;
     private static boolean greeted, asked, warned;
+    /** One answer counts for the whole party. */
+    private static boolean flirted;
 
     private TrainRide() {
     }
@@ -59,7 +64,7 @@ final class TrainRide {
         companion = everyone.get(new java.util.Random(s.seed ^ 0x54524149L).nextInt(everyone.size()));
         for (StudentEntity e : everyone) if (e.getSkin() == id) companion = e;
         walkingWith = companion.getSkin();
-        if (id != s.livingWith) {
+        if (!Living.active(s)) {
             BlockPos at = town.graph.pos(town.place("station"));
             companion.placeAt("station", new Vec3d(at.getX() + 0.5, at.getY(), at.getZ() + 0.5));
             companion.setAiDisabled(true);
@@ -93,7 +98,19 @@ final class TrainRide {
                 for (ServerPlayerEntity p : living) if (atStation(p) && !RunManager.inScene(p)) riders.add(p);
                 if (!riders.isEmpty()) board(s);
             }
-            case ABOARD, DEPARTED -> ride(s, town);
+            case ABOARD, DEPARTED -> {
+                // Anyone who turns up while it's still standing there gets on too.
+                if (stage == Stage.ABOARD && Railway.STATION_NAME.equals(Railway.stoppedAt())) {
+                    Vec3d moved = Railway.middle().subtract(startedAt);
+                    for (ServerPlayerEntity p : living) {
+                        if (!atStation(p) || riders.contains(p) || RunManager.inScene(p)) continue;
+                        riders.add(p);
+                        RunManager.setBusy(p, true);
+                        RunManager.sendRide(p, new Vec3d(SEAT.x + moved.x, SEAT.y, SEAT.z + moved.z), Math.max(1, RIDE_TICKS - age));
+                    }
+                }
+                ride(s, town);
+            }
             default -> {
             }
         }
@@ -102,7 +119,8 @@ final class TrainRide {
     private static void board(RunState s) {
         stage = Stage.ABOARD;
         age = 0;
-        greeted = asked = warned = false;
+        boardedAt = System.currentTimeMillis();
+        greeted = asked = warned = flirted = false;
         startedAt = Railway.middle();
         companion.setAiDisabled(true);
         companion.setNoGravity(true);
@@ -130,7 +148,11 @@ final class TrainRide {
         if (age % FOLLOW_EVERY == 0) {
             // Out of the way of the carriage, but near enough to keep the train on screen.
             Vec3d over = Railway.middle();
-            for (ServerPlayerEntity p : riders) p.teleport(p.getServerWorld(), over.x, over.y + OUT_OF_THE_WAY, over.z, -90f, 0f);
+            // Nobody's really falling between these, so don't let it add up.
+            for (ServerPlayerEntity p : riders) {
+                p.fallDistance = 0;
+                p.teleport(p.getServerWorld(), over.x, over.y + OUT_OF_THE_WAY, over.z, -90f, 0f);
+            }
         }
         // Developer testing only: what it looks like out of the window, before and after anyone speaks.
         if (System.getenv("KOKUHAKU_SHOTS") != null && (age == 50 || age == 240 || age == 480 || age == 800 || age == 1100 || age == 1400 || age == 1700)) {
@@ -153,7 +175,8 @@ final class TrainRide {
             warned = true;
             say(s, 2);
         }
-        if (stage == Stage.DEPARTED && (Railway.FESTIVAL_NAME.equals(Railway.stoppedAt()) || Railway.atFestival()) || age > LONGEST_RIDE) arrive(s, town);
+        if (stage == Stage.DEPARTED && (Railway.FESTIVAL_NAME.equals(Railway.stoppedAt()) || Railway.atFestival()) || age > LONGEST_RIDE
+                || System.currentTimeMillis() - boardedAt > LONGEST_RIDE_MS) arrive(s, town);
     }
 
     private static void say(RunState s, int beat) {
@@ -165,7 +188,8 @@ final class TrainRide {
                 case 1 -> Talk.say(p, name, "They do fireworks at seven. Everyone pairs off for it. Are you watching with anyone?", speaker,
                         Talk.option("I haven't decided.", q -> Talk.say(q, name, "Decide soon. People notice who you stand next to.", speaker)),
                         Talk.option("Maybe with you.", q -> {
-                            if (walkingWith < Roster.GIRLS) {
+                            if (!flirted && walkingWith < Roster.GIRLS) {
+                                flirted = true;
                                 s.fondness[walkingWith] = Math.min(5, s.fondness[walkingWith] + 1);
                                 s.markDirty();
                             }
@@ -187,10 +211,13 @@ final class TrainRide {
         for (ServerPlayerEntity p : off) {
             RunManager.sendBlack(p, town.homes.get(0), FADE * 2, "");
             RunManager.later(FADE, () -> {
+                p.fallDistance = 0;
                 p.teleport(p.getServerWorld(), platform.x, platform.y, platform.z, 180f, 0f);
                 RunManager.setBusy(p, false);
             });
             RunManager.later(FADE * 2 + 2, () -> {
+                // Gone before the walk: there's nobody here to walk.
+                if (p.isRemoved()) return;
                 BlockPos field = town.graph.pos(town.place("field"));
                 if (!WalkScene.startAlong(p, s, Railway.toTheField(new Vec3d(field.getX() + 0.5, field.getY(), field.getZ() + 0.5)))) Kokuhaku.LOG.info("No walk from the platform");
             });
@@ -203,6 +230,21 @@ final class TrainRide {
         companion.setNoGravity(false);
         companion.noClip = false;
         companion.settle();
+        companion.replan();
+    }
+
+    /** Gone mid-ride: off at the platform, on your feet, so you come back there and not in the air over the shore. */
+    static void leave(ServerPlayerEntity p) {
+        if (!riders.remove(p)) return;
+        Vec3d platform = Railway.platform();
+        p.fallDistance = 0;
+        p.teleport(p.getServerWorld(), platform.x, platform.y, platform.z, 180f, 0f);
+        RunManager.setBusy(p, false);
+        // Nobody left aboard: whoever was with you goes about their day.
+        if (riders.isEmpty() && (stage == Stage.ABOARD || stage == Stage.DEPARTED)) {
+            release();
+            stage = Stage.DONE;
+        }
     }
 
     /** You'd rather just be there. */

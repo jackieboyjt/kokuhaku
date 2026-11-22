@@ -22,12 +22,20 @@ final class Hallway {
     /** Low enough that you're properly sat on the chair, not hovering over it. */
     private static final double SEATED = 0.25;
     private static final List<Entity> bodies = new ArrayList<>();
+    /** How many are on their way down the hall right now. */
+    private static int dragging = 0;
 
     private Hallway() {
     }
 
     static void clear() {
         bodies.clear();
+        dragging = 0;
+    }
+
+    /** Somebody's still being dragged, so the run can't be called over yet. */
+    static boolean busy() {
+        return dragging > 0;
     }
 
     private static StudentEntity figure(ServerWorld world, int skin, int peek, Vec3d at, float yaw) {
@@ -45,8 +53,8 @@ final class Hallway {
         return e;
     }
 
-    /** Down the hall and through to the door. then is the room. */
-    static void drag(ServerPlayerEntity p, RunState s, Runnable then) {
+    /** Down the hall and through to the door. then is the room. Masked: friends are still out there, so you never see her face. */
+    static void drag(ServerPlayerEntity p, RunState s, boolean masked, Runnable then) {
         ServerWorld world = p.getServerWorld();
         Vec3d start = MenuRoom.HALL_START, end = MenuRoom.HALL_END;
         float yaw = (float) (Math.toDegrees(Math.atan2(end.z - start.z, end.x - start.x)) - 90);
@@ -62,7 +70,8 @@ final class Hallway {
             return;
         }
         Kokuhaku.LOG.info("Dragged down the hall");
-        RunManager.sendDrag(p, start, end, DRAG_TICKS);
+        dragging++;
+        RunManager.sendDrag(p, start, end, DRAG_TICKS, masked);
         for (int t = STEP; t <= DRAG_TICKS; t += STEP) {
             Vec3d at = start.lerp(end, MenuRoom.pulled(t / (double) DRAG_TICKS));
             RunManager.later(t, () -> {
@@ -74,6 +83,7 @@ final class Hallway {
             });
         }
         RunManager.later(DRAG_TICKS, () -> {
+            dragging = Math.max(0, dragging - 1);
             you.discard();
             her.discard();
             seat(world);

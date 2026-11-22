@@ -6,7 +6,9 @@ $game = "$dist\game"
 if (Test-Path $dist) { Remove-Item $dist -Recurse -Force -Confirm:$false }
 New-Item -ItemType Directory -Force "$game\mods", "$game\config", "$game\shaderpacks" | Out-Null
 
-Copy-Item 'build\libs\kokuhaku-0.1.0.jar' "$game\mods\"
+# The jar is named for mod_version, so it changes with every release.
+$modVersion = (Select-String 'gradle.properties' -Pattern '^mod_version=(.+)$').Matches[0].Groups[1].Value.Trim()
+Copy-Item "build\libs\kokuhaku-$modVersion.jar" "$game\mods\"
 $wanted = @(
     @{ project = 'fabric-api'; version = '0.92.12+1.20.1' },
     @{ project = 'sodium'; version = 'mc1.20.1-0.5.8' },

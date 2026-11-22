@@ -26,8 +26,6 @@ final class People {
     }
 
     private static final Map<Integer, Memory> memories = new HashMap<>();
-    /** Who died, and the day they did. */
-    private static final Map<Integer, Integer> deaths = new HashMap<>();
 
     private static final Map<Personality, List<String>> FIRST_MEETING = Map.of(
             Personality.CHEERFUL, List.of("Oh! I don't think we've ever really talked! I'm %s!", "Finally! You're the one who never says hi. I'm %s."),
@@ -66,11 +64,11 @@ final class People {
 
     static void reset() {
         memories.clear();
-        deaths.clear();
     }
 
-    static void died(int id, int day) {
-        deaths.put(id, day);
+    /** Who died, and the day they did: kept with the run, so a Continue doesn't forget them. */
+    static void died(RunState s, int id) {
+        if (id >= 0 && id < s.diedOn.length) s.diedOn[id] = s.day;
     }
 
     private static String pick(List<String> lines) {
@@ -81,8 +79,8 @@ final class People {
     private static String lost(RunState s, Student who) {
         String name = null;
         int group = Routines.group(who);
-        for (Map.Entry<Integer, Integer> d : deaths.entrySet()) {
-            if (d.getKey() != who.id() && Routines.group(Roster.get(d.getKey())) == group && s.day - d.getValue() <= GRIEF_DAYS) name = Roster.get(d.getKey()).firstName();
+        for (int id = 0; id < s.diedOn.length; id++) {
+            if (s.diedOn[id] > 0 && id != who.id() && Routines.group(Roster.get(id)) == group && s.day - s.diedOn[id] <= GRIEF_DAYS) name = Roster.get(id).firstName();
         }
         return name;
     }
@@ -97,20 +95,45 @@ final class People {
         return s.day >= AFRAID_FROM || s.dead.size() >= MANY_DEAD ? StudentEntity.AFRAID : StudentEntity.AT_EASE;
     }
 
-    /** Off sick, or can't face it. She's never off: she wouldn't miss a day of you. */
+    /** Off sick, or can't face it. Anyone can be, her included. Whoever you live with walks in beside you. */
     static boolean stayingHome(RunState s, int id) {
-        if (id >= Roster.TOTAL || !Schedule.isSchoolDay(s.day) || s.mystery().isYandere(id) || Festival.on(s)) return false;
+        if (id == s.livingWith) return false;
+        return rolledOff(s, id) && !late(s, id);
+    }
+
+    /** Off first thing, then in after all, around the first break. Anyone can be, her included. */
+    static boolean late(RunState s, int id) {
+        if (id == s.livingWith) return false;
+        return rolledOff(s, id) && new Random(s.seed ^ s.day * 15485863L ^ id * 32452843L ^ 0x4C415445L).nextFloat() < 0.3f;
+    }
+
+    /** Not there first thing: off for the day, or in late. */
+    static boolean notInFirstThing(RunState s, int id) {
+        return id != s.livingWith && rolledOff(s, id);
+    }
+
+    /** Whether today's roll keeps them home. Haruto always turns up on day 1: he walks you in. */
+    private static boolean rolledOff(RunState s, int id) {
+        if (id >= Roster.TOTAL || !Schedule.isSchoolDay(s.day) || Festival.on(s) || (s.day == 1 && id == Roster.GIRLS)) return false;
         Random today = new Random(s.seed ^ s.day * 15485863L ^ id * 32452843L);
         int chance = Math.min(MOST_ABSENT, ABSENT_IN_100 + s.dead.size() * MORE_FOR_EACH_DEATH);
         return today.nextInt(100) < (grieving(s, id) ? chance * 8 : chance);
     }
 
-    /** School days they've missed so far. She's never missed one. */
+    /** School days they've missed so far. Anyone's can climb, hers included. */
     static int daysOff(RunState s, int id) {
         int off = 0, today = s.day;
-        for (s.day = 1; s.day < today; s.day++) if (stayingHome(s, id)) off++;
+        for (s.day = 1; s.day < today; s.day++) if (rolledOff(s, id) && !late(s, id)) off++;
         s.day = today;
         return off;
+    }
+
+    /** School days they've come in late so far. Anyone can, her included. */
+    static int lateDays(RunState s, int id) {
+        int late = 0, today = s.day;
+        for (s.day = 1; s.day < today; s.day++) if (rolledOff(s, id) && late(s, id)) late++;
+        s.day = today;
+        return late;
     }
 
     /** What they say when you walk up to them: what they remember, or else whatever they'd have said anyway. */
@@ -122,7 +145,9 @@ final class People {
         m.talks++;
         m.lastDay = s.day;
         m.lastMinute = s.minute;
-        if (isHer) return usual;
+        // Her own greeting is the tell on Easy. Any harder, she remembers you like anyone does,
+        // and her odd line only slips out when nothing else comes to mind.
+        if (isHer && s.difficulty == com.kokuhaku.Difficulty.EASY) return usual;
         if (m.pestered >= 3) return FED_UP.get(who.personality());
         if (m.pestered >= 1) return pick(PESTERED.get(who.personality()));
         if (s.accused.contains(who.id())) return pick(ACCUSED);

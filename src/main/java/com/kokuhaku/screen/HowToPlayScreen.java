@@ -37,14 +37,14 @@ public class HowToPlayScreen extends Screen {
                     new Card(HOUSE, "Saving", "Your run saves every morning. Quit whenever you like and Continue puts you back in bed that morning. There's one save: you can't start another run until this one's over."),
                     new Card(ACCUSE, "Name her", "When only one girl fits, find her and say it to her face. A wrong guess costs you one of your few guesses, and she'll never forgive you.")),
             new Page("A school day",
-                    new Card(HOUSE, "Mornings", "Someone calls you from downstairs. Go to your front door and you walk in together. Answer them, ask them things. Space skips the walk."),
+                    new Card(HOUSE, "Mornings", "Someone calls you from downstairs. Go to your front door and you walk in together. Answer them, ask them things. Space skips the walk. Some mornings it's snowed and the school's shut."),
                     new Card(CLOCK, "Lessons", "Press T for your diary. Be in the right room when the bell goes. Answer in time; put your hand up (H) when asked, for a small prize."),
                     new Card(CLOCK, "PE and practicals", "PE is at the pool one day and on the outdoor court the next. Some Science lessons are in the upstairs lab, and some Home Economics in the kitchens."),
                     new Card(BAT, "Marks", "Absences and bad lessons earn marks. Too many and you're expelled. A teacher will let you work one off after school.")),
             new Page("Finding her",
-                    new Card(TALK, "Ask everyone", "Right-click people. Ask about them, and what they've noticed. Listen to what they avoid saying."),
-                    new Card(BAG, "Your bag", "Press E. Every clue goes in here, and Suspects lets you cross off anyone who doesn't fit."),
-                    new Card(CLUE, "Look around", "Clubs and neighbourhoods have registers. She drops things. Someone who dies may leave something in their room."),
+                    new Card(TALK, "Ask everyone", "Right-click people. Ask about them, and what they've noticed. Listen to what they avoid saying. Some people are surer than others."),
+                    new Card(BAG, "Your bag", "Press E. Every clue goes in here, with the day you got it. Under Suspects, mark each girl Her?, Not sure or Not her, and write yourself a line. Only you see your marks."),
+                    new Card(CLUE, "Look around", "Clubs and neighbourhoods have registers. She drops things. She isn't the only one. Someone who dies may leave something in their room."),
                     new Card(TALK, "Your phone", "Press G. Your class never stops messaging, and from day 3 there's a number you don't know.")),
             new Page("Staying alive",
                     new Card(BAT, "Curfew", "Be home before curfew. Hold your key (slot 2) and right-click your front door to lock it. Then sleep in your own bed to reach morning."),
@@ -52,10 +52,10 @@ public class HowToPlayScreen extends Screen {
                     new Card(BAT, "Alone", "Stay where people can see you, above all after dark. If she gets hold of you, press the keys as they appear."),
                     new Card(HOUSE, "The roads", "Cross at the white lines when the lights are red for the cars: they stop there. Anywhere else, they won't. A car or train means hospital on Easy and Medium, and worse on anything harder.")),
             new Page("Money and people",
-                    new Card(CLOCK, "Money, food and clothes", "Eat and drink or you slow down: lunch, vending machines, and places in town with their own hours. Jobs pay; you get pocket money on Mondays. Clothes go on after school."),
+                    new Card(CLOCK, "Money, food and clothes", "Food and water run down all day, water faster. Low, you slow down; empty, you can barely stand. Breakfast is at home; lunch, vending machines and places in town do the rest, each with its own hours. Jobs pay, and there's pocket money on Mondays. Clothes go on after school. Something smart helps on a date; a dark coat or a hood makes you harder to follow at night; you can run in a tracksuit. Each job gives you one shift a day."),
                     new Card(TALK, "Favours", "Ask people if they need a hand. Find what they've lost for money and what they know."),
                     new Card(TALK, "Going out", "It takes time. Talk to her on different days, hang out as friends, then ask. Too soon and she says no. Some only want to be friends. Ignore her and she leaves."),
-                    new Card(CALENDAR, "The School Festival", "Day 13. Take the train from Chinetsu Station, try the stalls, and choose carefully who you watch the fireworks with.")),
+                    new Card(CALENDAR, "The School Festival", "Day " + com.kokuhaku.game.Festival.DAY + ", the first Saturday. Take the train from Chinetsu Station, try the stalls, and choose carefully who you watch the fireworks with.")),
     };
 
     private static final Page[] MULTIPLAYER_PAGES = {
@@ -173,12 +173,33 @@ public class HowToPlayScreen extends Screen {
         context.drawTextWithShadow(textRenderer, KokuhakuClient.menuText(p.heading()), x, y, 0xFFE0283C);
         y += 14;
         int rowH = Math.min(46, (height - 44 - y) / p.cards().length);
-        for (Card card : p.cards()) {
-            drawIcon(context, card.icon, x, y + 2, 1);
-            context.drawTextWithShadow(textRenderer, Text.literal(card.title), x + 24, y, 0xFFF2D6DA);
-            context.drawTextWrapped(textRenderer, Text.literal(card.body), x + 24, y + 11, wide - 24, 0xFFB0A8AC);
-            y += rowH;
+        // Space the cards by how tall they really are, so long ones don't run into the next.
+        int room = height - 40 - y, total = 0, tight = 0;
+        int[] tall = new int[p.cards().length], step = new int[tall.length];
+        for (int i = 0; i < tall.length; i++) {
+            tall[i] = 11 + textRenderer.wrapLines(Text.literal(p.cards()[i].body), wide - 24).size() * 9 + 3;
+            step[i] = Math.max(rowH, tall[i]);
+            total += step[i];
+            tight += tall[i];
         }
+        if (total > room) {
+            step = tall;
+            total = tight;
+        }
+        // Still too much on a small screen: shrink the cards to fit above the page counter.
+        float scale = total > room ? room / (float) total : 1f;
+        context.getMatrices().push();
+        context.getMatrices().translate(x, y, 0);
+        context.getMatrices().scale(scale, scale, 1f);
+        int at = 0;
+        for (int i = 0; i < tall.length; i++) {
+            Card card = p.cards()[i];
+            drawIcon(context, card.icon, 0, at + 2, 1);
+            context.drawTextWithShadow(textRenderer, Text.literal(card.title), 24, at, 0xFFF2D6DA);
+            context.drawTextWrapped(textRenderer, Text.literal(card.body), 24, at + 11, wide - 24, 0xFFB0A8AC);
+            at += step[i];
+        }
+        context.getMatrices().pop();
     }
 
     private void drawIcon(DrawContext context, int icon, int x, int y, int scale) {
@@ -186,7 +207,8 @@ public class HowToPlayScreen extends Screen {
     }
 
     private void renderDifficulties(DrawContext context) {
-        int rowH = 34;
+        // Tighter rows on short screens, so the footer clears the page counter.
+        int rowH = Math.max(30, Math.min(34, (height - 58 - 52) / Difficulty.values().length));
         int w = Math.min(420, width - 40);
         int x = (width - w) / 2;
         int y = 58;

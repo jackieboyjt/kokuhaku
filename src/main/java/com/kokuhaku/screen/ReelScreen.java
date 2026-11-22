@@ -100,10 +100,15 @@ public class ReelScreen extends Screen {
         context.getMatrices().scale(1.8f, 1.8f, 1f);
         context.drawCenteredTextWithShadow(textRenderer, title, 0, 0, 0xFFD01C30);
         context.getMatrices().pop();
-        int wide = Math.min(WIDEST, width - 32), left = (width - wide) / 2, y = 38;
+        int wide = Math.min(WIDEST, width - 32), left = (width - wide) / 2;
         int showing = shown();
         List<List<OrderedText>> wrapped = new ArrayList<>();
         for (String line : lines) wrapped.add(textRenderer.wrapLines(Text.literal(line), wide));
+        // On a small screen the older lines rise under the title, so the newest stays above the prompt.
+        int total = 0;
+        for (int i = 0; i <= showing && i < lines.length; i++) total += wrapped.get(i).size() * LINE_HEIGHT + GAP;
+        int y = Math.min(38, height - 28 - total);
+        context.enableScissor(0, 34, width, height - 24);
         for (int i = 0; i <= showing && i < lines.length; i++) {
             int color = i == 0 ? 0xFFE8E2E4 : lines[i].startsWith("Day ") ? 0xFFB0A8AC : 0xFFE0283C;
             for (OrderedText part : wrapped.get(i)) {
@@ -112,6 +117,7 @@ public class ReelScreen extends Screen {
             }
             y += GAP;
         }
+        context.disableScissor();
         if (showing >= lines.length) {
             context.drawCenteredTextWithShadow(textRenderer, KokuhakuClient.menuText("Click to go on"), width / 2, height - 16, 0xFF6C6C74);
         }

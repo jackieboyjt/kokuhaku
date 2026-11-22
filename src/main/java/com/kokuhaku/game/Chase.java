@@ -37,20 +37,25 @@ final class Chase {
     }
 
     private static final Map<UUID, Run> runs = new HashMap<>();
-    private static int teaDay = -1, teaMinute = -1;
+    /** When each of you last had a tea: day and minute. Yours only counts for you. */
+    private static final Map<UUID, int[]> teas = new HashMap<>();
 
     private Chase() {
     }
 
     static void clear() {
         runs.clear();
-        teaDay = -1;
-        teaMinute = -1;
+        teas.clear();
     }
 
-    static void drank(RunState s) {
-        teaDay = s.day;
-        teaMinute = s.minute;
+    static void drank(ServerPlayerEntity p, RunState s) {
+        teas.put(p.getUuid(), new int[]{s.day, s.minute});
+    }
+
+    /** Caught, run over or in the ward some other way: the run's over, and nothing comes for you twice. */
+    static void stop(ServerPlayerEntity p) {
+        Run run = runs.get(p.getUuid());
+        if (run != null) end(run);
     }
 
     static boolean active(ServerPlayerEntity p) {
@@ -75,7 +80,8 @@ final class Chase {
     /** It's curfew and you're out. If you've had the tea, you get your chance. */
     static boolean begin(ServerPlayerEntity p, RunState s) {
         if (active(p)) return true;
-        boolean tea = p.hasStatusEffect(StatusEffects.SPEED) || teaDay == s.day && s.minute - teaMinute <= TEA_LASTS;
+        int[] had = teas.get(p.getUuid());
+        boolean tea = p.hasStatusEffect(StatusEffects.SPEED) || had != null && had[0] == s.day && s.minute - had[1] <= TEA_LASTS;
         if (!tea) return false;
         Run run = new Run();
         run.player = p;
@@ -110,7 +116,9 @@ final class Chase {
                 continue;
             }
             if (run.age % 20 == 0) {
-                run.slow = p.getPos().squaredDistanceTo(run.lastSecond) < MOVING_PER_SECOND * MOVING_PER_SECOND;
+                // You can run in a tracksuit: a little slower still counts as running.
+                double pace = Clothes.wearing(s, p) == Outfit.TRACKSUIT ? MOVING_PER_SECOND * 0.85 : MOVING_PER_SECOND;
+                run.slow = p.getPos().squaredDistanceTo(run.lastSecond) < pace * pace;
                 run.lastSecond = p.getPos();
                 // Your legs hold out as long as the time does.
                 p.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 60, 0, false, false));
@@ -147,6 +155,7 @@ final class Chase {
     private static void end(Run run) {
         runs.remove(run.player.getUuid());
         if (run.figure != null) run.figure.discard();
+        RunManager.hush(run.player, 0);
     }
 
     static List<UUID> running() {

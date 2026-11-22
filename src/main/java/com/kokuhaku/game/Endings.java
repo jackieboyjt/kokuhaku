@@ -85,7 +85,7 @@ public final class Endings {
     /** You never found out. Or you did, and you stayed. */
     static String confessed(String name) {
         return secret(5, "Kokuhaku",
-                "Day 31. Everyone thinks it's over.",
+                "Day " + (Schedule.DAYS + 1) + ". Everyone thinks it's over.",
                 name + " takes your hand on the way to school, the way she has every morning.",
                 "\"I wrote that note,\" she says. \"The first one. You kept it.\"",
                 "She doesn't let go. She doesn't look at you. She's smiling.",

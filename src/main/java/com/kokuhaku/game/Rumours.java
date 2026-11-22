@@ -22,7 +22,7 @@ final class Rumours {
 
     /** Something to add after a hello, or nothing. */
     static String line(RunState s) {
-        if (!s.devoted && !Living.active(s) && LunchScene.missed() >= LunchScene.MISSED_FROM && RANDOM.nextBoolean()) return " We saved you a seat at lunch. You never came.";
+        if (!s.devoted && !Living.active(s) && LunchScene.missed(s) >= LunchScene.MISSED_FROM && RANDOM.nextBoolean()) return " We saved you a seat at lunch. You never came.";
         if (s.devoted || Living.active(s) || s.day < FIRST_DAY || RANDOM.nextFloat() > CHANCE) return "";
         List<String> open = new ArrayList<>(BY_WEEK.get(Math.min(BY_WEEK.size() - 1, (s.day - 1) / 3)));
         for (int g : s.accused) {

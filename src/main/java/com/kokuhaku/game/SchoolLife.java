@@ -38,6 +38,9 @@ final class SchoolLife {
     private static final List<StudentEntity> pupils = new ArrayList<>();
     private static StudentEntity teacher = null, whisperer = null, other = null;
     private static final List<Entity> desks = new ArrayList<>(), gate = new ArrayList<>();
+    /** Who's already been noticed coming in late, as "day:id". */
+    private static final Set<String> lateSaid = new HashSet<>();
+    private static boolean lateTold = false;
 
     private SchoolLife() {
     }
@@ -50,6 +53,8 @@ final class SchoolLife {
         teacher = whisperer = other = null;
         desks.clear();
         gate.clear();
+        lateSaid.clear();
+        lateTold = false;
     }
 
     static void tick(MinecraftServer server, RunState s, List<ServerPlayerEntity> living, Town town) {
@@ -61,10 +66,13 @@ final class SchoolLife {
         if (now != room) {
             lessonOver();
             room = now;
-            if (now != null) lessonBegins(server, s, town);
+            if (now != null) lessonBegins(server, s, town, living);
         }
         if (room == null || sat == null) return;
-        if (ticks % SEE_WHO_EVERY == 0) register(server);
+        if (ticks % SEE_WHO_EVERY == 0) {
+            register(server);
+            cameInLate(s, living);
+        }
         lesson(sat);
     }
 
@@ -75,8 +83,10 @@ final class SchoolLife {
         for (StudentEntity e : server.getOverworld().getEntitiesByType(com.kokuhaku.Kokuhaku.STUDENT, Teachers::isOne)) if (room.contains(e.getPos())) teacher = e;
     }
 
-    private static void lessonBegins(MinecraftServer server, RunState s, Town town) {
+    private static void lessonBegins(MinecraftServer server, RunState s, Town town, List<ServerPlayerEntity> living) {
         register(server);
+        lateTold = false;
+        cameInLate(s, living);
         nextEvent = ticks + NEXT_FROM;
         com.kokuhaku.Kokuhaku.LOG.info("Lesson: {} sat down, teacher {}", pupils.size(), teacher == null ? "absent" : teacher.getName().getString());
         // Whoever's gone: their desk's still there.
@@ -90,6 +100,20 @@ final class SchoolLife {
             if (!groups.contains(group)) continue;
             Vec3d chair = Routines.seat(Roster.get(dead), group, number, town).chair();
             if (chair != null) desks.add(LunchHall.loose(server.getOverworld(), chair.add(0, 1.02, -1), FLOWERS[dead % FLOWERS.length], 0.34f));
+        }
+    }
+
+    /** Second lesson: someone who wasn't there first thing is at her desk now. One of them a lesson, said once. */
+    private static void cameInLate(RunState s, List<ServerPlayerEntity> living) {
+        if (lateTold || room == null || s.minute < Schedule.PERIOD_START[1] || s.minute >= Schedule.PERIOD_START[1] + Schedule.PERIOD_LENGTH) return;
+        for (StudentEntity e : pupils) {
+            int skin = e.getSkin();
+            if (skin >= Roster.GIRLS || s.dead.contains(skin) || !People.late(s, skin) || !lateSaid.add(s.day + ":" + skin)) continue;
+            lateTold = true;
+            String first = Roster.get(skin).firstName();
+            String line = first + " came in late this morning." + (Rain.indoors(s) ? " Her shoes are wet." : " She doesn't say where she's been.");
+            for (ServerPlayerEntity p : living) if (RunManager.inLesson(p) && room.contains(p.getPos())) RunManager.tell(p, "", line);
+            return;
         }
     }
 

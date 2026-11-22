@@ -44,6 +44,8 @@ public final class Pe {
     private static final class Race {
         ServerPlayerEntity player;
         final List<StudentEntity> racers = new ArrayList<>();
+        /** Classmates off the deck for the race, and where to put them back. */
+        final Map<StudentEntity, Vec3d> borrowed = new HashMap<>();
         final double[] x = new double[RACERS], speed = new double[RACERS];
         int age, ahead;
         final boolean[] home = new boolean[RACERS];
@@ -89,18 +91,39 @@ public final class Pe {
         List<Integer> classmates = new ArrayList<>();
         for (int g : Roster.active(s.party.size())) if (!s.dead.contains(g) && Routines.group(Roster.get(g)) == 0) classmates.add(g);
         java.util.Collections.shuffle(classmates, RANDOM);
+        // The ones on the deck get in the water themselves, so nobody's in two places at once.
+        List<StudentEntity> onDeck = new ArrayList<>(world.getEntitiesByType(Kokuhaku.STUDENT, e -> classmates.contains(e.getSkin())
+                && e.getSkin() != s.livingWith && e.getY() < 90 && !e.isAiDisabled() && e.getPeek() == 0 && !e.hasVehicle()
+                && !Townsfolk.isOne(e) && !Teachers.isOne(e) && !e.isTalking() && !e.isChatting() && !e.isSittingDown() && there(e.getPos(), s.day)));
+        java.util.Collections.shuffle(onDeck, RANDOM);
+        List<Integer> elsewhere = new ArrayList<>(classmates);
+        for (StudentEntity e : onDeck) elsewhere.remove(Integer.valueOf(e.getSkin()));
+        // In a party, another player's race may already have these girls in the water.
+        java.util.Set<Integer> taken = new java.util.HashSet<>();
+        for (Race r : races.values()) for (StudentEntity e : r.racers) taken.add(e.getSkin());
+        elsewhere.removeAll(taken);
+        List<Integer> spare = new ArrayList<>(classmates);
+        spare.removeAll(taken);
         for (int i = 0; i < RACERS; i++) {
             race.x[i] = START_X;
             race.speed[i] = SLOWEST + RANDOM.nextDouble() * (FASTEST - SLOWEST);
-            StudentEntity e = Kokuhaku.STUDENT.create(world);
-            if (e == null) continue;
-            e.setSkin(classmates.isEmpty() ? i : classmates.get(i % classmates.size()));
+            StudentEntity e;
+            if (i < onDeck.size()) {
+                e = onDeck.get(i);
+                race.borrowed.put(e, e.getPos());
+                e.getNavigation().stop();
+            } else {
+                e = Kokuhaku.STUDENT.create(world);
+                if (e == null) continue;
+                List<Integer> from = !elsewhere.isEmpty() ? elsewhere : !spare.isEmpty() ? spare : classmates;
+                e.setSkin(from.isEmpty() ? i : from.get(i % from.size()));
+            }
             e.setAiDisabled(true);
             e.setNoGravity(true);
             e.noClip = true;
             e.setSwimming(true);
             e.setPose(EntityPose.SWIMMING);
-            world.spawnEntity(e);
+            if (!race.borrowed.containsKey(e)) world.spawnEntity(e);
             race.racers.add(e);
         }
         races.put(p.getUuid(), race);
@@ -164,7 +187,22 @@ public final class Pe {
 
     private static void finish(Race race, RunState s) {
         races.remove(race.player.getUuid());
-        race.racers.forEach(StudentEntity::discard);
+        for (StudentEntity e : race.racers) {
+            Vec3d back = race.borrowed.get(e);
+            if (back == null) {
+                e.discard();
+                continue;
+            }
+            // Out of the water and back where they were stood.
+            e.refreshPositionAndAngles(back.x, back.y, back.z, e.getYaw(), 0f);
+            e.setSwimming(false);
+            e.setPose(EntityPose.STANDING);
+            e.setAiDisabled(false);
+            e.setNoGravity(false);
+            e.noClip = false;
+            e.settle();
+            e.replan();
+        }
         Town town = RunManager.town();
         Vec3d deck = Vec3d.ofBottomCenter(town.graph.pos(town.place("pool")));
         if (!race.player.isRemoved()) race.player.teleport(race.player.getServerWorld(), deck.x, deck.y, deck.z, race.player.getYaw(), 0f);

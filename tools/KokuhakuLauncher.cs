@@ -42,7 +42,7 @@ public class KokuhakuLauncher : Form
     private const int TitleH = 36, SideW = 210;
 
     /// This launcher's own version: a newer release on GitHub replaces it.
-    private const string LauncherVersion = "1.4.3";
+    private const string LauncherVersion = "1.5.0";
     private const string Releases = "https://api.github.com/repos/jackieboyjt/kokuhaku/releases";
     private const int MostShown = 7;
 
@@ -81,6 +81,7 @@ public class KokuhakuLauncher : Form
             Tell("This needs Prism Launcher.\n\nInstall it from prismlauncher.org, then open this again.");
             return;
         }
+        prismHome = Path.GetDirectoryName(prism);
         Application.Run(new KokuhakuLauncher(prism));
     }
 
@@ -89,14 +90,42 @@ public class KokuhakuLauncher : Form
         MessageBox.Show(message, TrueName, MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
+    /// The folder prismlauncher.exe is in.
+    private static string prismHome;
+
+    /// <summary>Prism's own folder: beside it when it's portable (a zip, or Scoop), otherwise in AppData.</summary>
     private static string Data()
     {
+        if (prismHome != null && File.Exists(Path.Combine(prismHome, "portable.txt"))) return prismHome;
         return Path.Combine(Environment.GetEnvironmentVariable("APPDATA"), "PrismLauncher");
+    }
+
+    /// <summary>Where Prism keeps its instances: wherever its settings say, or "instances" in its folder.</summary>
+    private static string Instances()
+    {
+        try
+        {
+            string cfg = Path.Combine(Data(), "prismlauncher.cfg");
+            if (File.Exists(cfg))
+            {
+                foreach (string line in File.ReadAllLines(cfg))
+                {
+                    if (!line.StartsWith("InstanceDir=")) continue;
+                    string dir = line.Substring("InstanceDir=".Length).Trim().Trim('"').Replace("\\\\", "\\").Replace('/', Path.DirectorySeparatorChar);
+                    if (dir.Length > 0) return Path.GetFullPath(Path.Combine(Data(), dir));
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Unreadable: the usual place.
+        }
+        return Path.Combine(Data(), "instances");
     }
 
     private static string Game()
     {
-        return Path.Combine(Data(), "instances", Instance, ".minecraft");
+        return Path.Combine(Instances(), Instance, ".minecraft");
     }
 
     /// <summary>Unpacks the game into Prism, if this PC doesn't have this version yet.</summary>
@@ -107,7 +136,7 @@ public class KokuhakuLauncher : Form
             if (packed == null) return;
             using (ZipArchive zip = new ZipArchive(packed, ZipArchiveMode.Read))
             {
-                string instance = Path.Combine(Data(), "instances", Instance);
+                string instance = Path.Combine(Instances(), Instance);
                 string stamp = Path.Combine(instance, ".kokuhaku-version");
                 string version;
                 using (StreamReader reader = new StreamReader(zip.GetEntry("version.txt").Open())) version = reader.ReadToEnd().Trim();
@@ -116,6 +145,7 @@ public class KokuhakuLauncher : Form
 
                 // Whatever's listed for download stays, so an update doesn't fetch it all again.
                 ZipArchiveEntry list = zip.GetEntry(DownloadList);
+                if (list == null) list = zip.GetEntry("instances/" + Instance + "/" + DownloadList);
                 string[] keep = new string[0];
                 if (list != null)
                 {
@@ -136,7 +166,11 @@ public class KokuhakuLauncher : Form
                 {
                     Say("Unpacking the game", ++done / (float)all);
                     if (entry.FullName.EndsWith("/") || entry.FullName == "version.txt") continue;
-                    string target = Path.Combine(Data(), entry.FullName.Replace('/', Path.DirectorySeparatorChar));
+                    // The instance goes wherever Prism keeps its instances; the icon stays in Prism's folder.
+                    string name = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
+                    string target = entry.FullName.StartsWith("instances/")
+                        ? Path.Combine(Instances(), name.Substring("instances/".Length))
+                        : Path.Combine(Data(), name);
                     Directory.CreateDirectory(Path.GetDirectoryName(target));
                     entry.ExtractToFile(target, true);
                 }
@@ -173,7 +207,7 @@ public class KokuhakuLauncher : Form
     /// </summary>
     private void EnsureMods()
     {
-        string instance = Path.Combine(Data(), "instances", Instance);
+        string instance = Path.Combine(Instances(), Instance);
         string list = Path.Combine(instance, DownloadList);
         if (!File.Exists(list)) return;
         string mods = Path.Combine(instance, ".minecraft", "mods");
@@ -199,7 +233,7 @@ public class KokuhakuLauncher : Form
     /// <summary>The mountains are too big to pack in here too. The game still runs without them, so a failure here doesn't stop it.</summary>
     private void EnsureMap()
     {
-        string list = Path.Combine(Data(), "instances", Instance, MapList);
+        string list = Path.Combine(Instances(), Instance, MapList);
         if (!File.Exists(list)) return;
         string[] parts = File.ReadAllText(list).Trim().Split(' ');
         if (parts.Length != 2 || !parts[0].StartsWith("http")) return;
@@ -331,7 +365,7 @@ public class KokuhakuLauncher : Form
     /// <summary>Sets keys in the instance's instance.cfg, keeping everything else.</summary>
     private static void Configure(Dictionary<string, string> set)
     {
-        string cfg = Path.Combine(Data(), "instances", Instance, "instance.cfg");
+        string cfg = Path.Combine(Instances(), Instance, "instance.cfg");
         if (!File.Exists(cfg)) return;
         var lines = File.ReadAllLines(cfg).Where(l => !set.Keys.Any(k => l.StartsWith(k + "="))).ToList();
         lines.AddRange(set.Select(kv => kv.Key + "=" + kv.Value));
@@ -374,6 +408,56 @@ public class KokuhakuLauncher : Form
     private static extern bool ShowWindow(IntPtr window, int how);
 
     [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr window);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct ProcessEntry
+    {
+        public uint Size, Usage, ProcessId;
+        public IntPtr DefaultHeapId;
+        public uint ModuleId, Threads, ParentProcessId;
+        public int PriorityBase;
+        public uint Flags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string ExeFile;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint process);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "Process32FirstW")]
+    private static extern bool Process32First(IntPtr snapshot, ref ProcessEntry entry);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, EntryPoint = "Process32NextW")]
+    private static extern bool Process32Next(IntPtr snapshot, ref ProcessEntry entry);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    /// <summary>Each running process's parent, by id.</summary>
+    private static Dictionary<int, int> Parents()
+    {
+        var parents = new Dictionary<int, int>();
+        IntPtr snapshot = CreateToolhelp32Snapshot(2 /* processes */, 0);
+        if (snapshot == new IntPtr(-1)) return parents;
+        try
+        {
+            ProcessEntry entry = new ProcessEntry { Size = (uint)Marshal.SizeOf(typeof(ProcessEntry)) };
+            for (bool more = Process32First(snapshot, ref entry); more; more = Process32Next(snapshot, ref entry))
+            {
+                parents[(int)entry.ProcessId] = (int)entry.ParentProcessId;
+            }
+        }
+        finally
+        {
+            CloseHandle(snapshot);
+        }
+        return parents;
+    }
+
+    [DllImport("user32.dll")]
     private static extern bool ReleaseCapture();
 
     [DllImport("user32.dll")]
@@ -407,6 +491,43 @@ public class KokuhakuLauncher : Form
         {
             string exe = Path.Combine(place, "prismlauncher.exe");
             if (File.Exists(exe)) return exe;
+        }
+        // Scoop keeps it in the user's folder.
+        string scoop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "scoop", "apps", "prismlauncher", "current", "prismlauncher.exe");
+        if (File.Exists(scoop)) return scoop;
+        // Already running, from wherever it was unzipped.
+        foreach (Process p in Process.GetProcessesByName("prismlauncher"))
+        {
+            try
+            {
+                string exe = p.MainModule.FileName;
+                if (File.Exists(exe)) return exe;
+            }
+            catch (Exception)
+            {
+                // Not allowed to look.
+            }
+        }
+        // Installed somewhere else: its uninstaller knows where.
+        foreach (Microsoft.Win32.RegistryKey root in new[] { Microsoft.Win32.Registry.CurrentUser, Microsoft.Win32.Registry.LocalMachine })
+        {
+            foreach (string name in new[] { "PrismLauncher", "Prism Launcher" })
+            {
+                try
+                {
+                    using (Microsoft.Win32.RegistryKey key = root.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + name))
+                    {
+                        string place = key == null ? null : key.GetValue("InstallLocation") as string;
+                        if (string.IsNullOrEmpty(place)) continue;
+                        string exe = Path.Combine(place.Trim('"'), "prismlauncher.exe");
+                        if (File.Exists(exe)) return exe;
+                    }
+                }
+                catch (Exception)
+                {
+                    // Not allowed to look.
+                }
+            }
         }
         return null;
     }
@@ -548,10 +669,15 @@ public class KokuhakuLauncher : Form
         System.Version mine = Number(LauncherVersion);
         List<Version> shown = new List<Version>();
         int me = 0;
+        bool matched = false;
         foreach (Release r in found.Take(MostShown))
         {
             int c = r.Number.CompareTo(mine);
-            if (c == 0) me = shown.Count;
+            if (c == 0)
+            {
+                me = shown.Count;
+                matched = true;
+            }
             shown.Add(new Version
             {
                 Name = "Kokuhaku " + r.Number.ToString(3),
@@ -568,18 +694,28 @@ public class KokuhakuLauncher : Form
         shown.Add(new Version { Name = "Next update", Detail = "1.20.1  \u00b7  WIP", Ready = false });
         BeginInvoke((Action)(() =>
         {
+            // Not on GitHub yet (a build being tried out): it stays at the top, as this one.
+            if (!matched) shown.Insert(0, new Version { Name = "Kokuhaku " + LauncherVersion, Detail = "1.20.1  ·  this one", Ready = true, Notes = found[0].Number.CompareTo(mine) < 0 ? "This is the newest version." : Versions[0].Notes });
             Versions = shown.ToArray();
             selected = me;
             notesScroll = 0;
         }));
         Release newest = found[0];
-        if (newest.Number.CompareTo(mine) > 0 && !string.IsNullOrEmpty(newest.ExeUrl) && Environment.GetEnvironmentVariable("KOKUHAKU_NOUPDATE") != "1") Update(newest);
+        if (newest.Number.CompareTo(mine) > 0 && !string.IsNullOrEmpty(newest.ExeUrl) && Environment.GetEnvironmentVariable("KOKUHAKU_NOUPDATE") != "1")
+        {
+            BeginInvoke((Action)(() =>
+            {
+                // Not halfway through a launch: it can wait for next time.
+                if (busy) return;
+                busy = true;
+                new Thread(() => Update(newest)) { IsBackground = true }.Start();
+            }));
+        }
     }
 
     /// <summary>Downloads the new launcher over this one and starts it. If anything goes wrong, this one carries on.</summary>
     private void Update(Release to)
     {
-        busy = true;
         string me = Application.ExecutablePath, next = me + ".new", old = me + ".old";
         string what = "Updating to " + to.Number.ToString(3);
         try
@@ -669,12 +805,23 @@ public class KokuhakuLauncher : Form
             EnsureShader();
             EnsureJava();
             Say("Starting", -1f);
-            bool free = Environment.GetEnvironmentVariable("KOKUHAKU_NOLAUNCH") == "1" || ClosePrism();
+            int state = Environment.GetEnvironmentVariable("KOKUHAKU_NOLAUNCH") == "1" ? PrismClosed : ClosePrism();
+            bool declined = false;
+            // A game may have started loading while Prism was being asked to close.
+            if (state == PrismStuck && PrismGameIsUp(Process.GetProcessesByName("prismlauncher"))) state = PrismBusy;
+            if (state == PrismStuck)
+            {
+                // Most likely a window of it that's out of sight, from a launch that never got going.
+                bool end = (bool)Invoke((Func<bool>)(() => MessageBox.Show(this, "Prism Launcher won't close. It may be waiting on a window that can't be seen.\n\nEnd it and carry on?", TrueName, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes));
+                declined = !end;
+                if (end && EndPrism()) state = PrismClosed;
+            }
+            bool free = state == PrismClosed;
             BeginInvoke((Action)(() =>
             {
                 if (!free)
                 {
-                    Tell("Prism Launcher is busy.\n\nClose it, then open this again.");
+                    if (!declined) Tell("Prism Launcher is busy.\n\nClose it, then open this again.");
                     busy = false;
                     Say("", -1f);
                     return;
@@ -684,6 +831,8 @@ public class KokuhakuLauncher : Form
                     Close();
                     return;
                 }
+                // Java that's already running isn't this game.
+                javaBefore = new HashSet<int>(JavaProcesses().Select(p => p.Id));
                 Process.Start(new ProcessStartInfo(prism, "--launch \"" + Instance + "\"") { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(prism) });
                 launched = true;
                 clock.Restart();
@@ -696,14 +845,26 @@ public class KokuhakuLauncher : Form
     {
         if (launched)
         {
+            // After that, whatever Prism is asking comes back into sight.
             if (clock.ElapsedMilliseconds < HidePrismMs) HidePrism();
+            else ShowPrism();
             if (GameIsUp() || clock.ElapsedMilliseconds > GiveUpMs) Close();
         }
         Invalidate();
     }
 
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        // Closing with no game yet: Prism's windows mustn't be left out of sight.
+        if (launched && !GameIsUp()) ShowPrism();
+        base.OnFormClosing(e);
+    }
+
+    /// Prism's windows this hid, so they can be shown again.
+    private readonly List<IntPtr> hiddenByUs = new List<IntPtr>();
+
     /// <summary>Everything Prism opens while it gets the game going, out of sight.</summary>
-    private static void HidePrism()
+    private void HidePrism()
     {
         HashSet<uint> ids = new HashSet<uint>(Process.GetProcessesByName("prismlauncher").Select(p => (uint)p.Id));
         if (ids.Count == 0) return;
@@ -711,37 +872,96 @@ public class KokuhakuLauncher : Form
         {
             uint owner;
             GetWindowThreadProcessId(window, out owner);
-            if (ids.Contains(owner) && IsWindowVisible(window)) ShowWindow(window, 0);
+            if (ids.Contains(owner) && IsWindowVisible(window))
+            {
+                if (!hiddenByUs.Contains(window)) hiddenByUs.Add(window);
+                ShowWindow(window, 0);
+            }
             return true;
         }, IntPtr.Zero);
     }
 
+    /// <summary>Prism's windows back, if it needs something only it can ask (a sign-in, say).</summary>
+    private void ShowPrism()
+    {
+        if (hiddenByUs.Count == 0) return;
+        IntPtr last = IntPtr.Zero;
+        foreach (IntPtr window in hiddenByUs)
+        {
+            if (!IsWindow(window)) continue;
+            ShowWindow(window, 5);
+            last = window;
+        }
+        if (last != IntPtr.Zero) SetForegroundWindow(last);
+        hiddenByUs.Clear();
+    }
+
+    private const int PrismClosed = 0, PrismBusy = 1, PrismStuck = 2;
+
     /// <summary>
     /// Prism ignores a launch request while it's already open, so an idle Prism has to close
-    /// first. False if it won't, or if it's running a game we shouldn't interrupt.
+    /// first. Busy if it's running a game we shouldn't interrupt; stuck if it won't close.
     /// </summary>
-    private static bool ClosePrism()
+    private static int ClosePrism()
     {
         Process[] open = Process.GetProcessesByName("prismlauncher");
-        if (open.Length == 0) return true;
-        if (GameIsUp()) return false;
+        if (open.Length == 0) return PrismClosed;
+        if (PrismGameIsUp(open)) return PrismBusy;
         foreach (Process p in open)
         {
             p.CloseMainWindow();
-            if (!p.WaitForExit(6000)) return false;
+            if (!p.WaitForExit(6000)) return PrismStuck;
         }
-        return true;
+        return PrismClosed;
     }
 
-    /// <summary>The game's own window has opened.</summary>
-    private static bool GameIsUp()
+    /// <summary>Prism, ended, for when it won't close by asking.</summary>
+    private static bool EndPrism()
     {
-        foreach (string name in new[] { "javaw", "java" })
+        try
         {
-            // Its title is scrambled, so any Java window will do: nothing else here opens one.
-            if (Process.GetProcessesByName(name).Any(p => p.MainWindowHandle != IntPtr.Zero)) return true;
+            Process[] open = Process.GetProcessesByName("prismlauncher");
+            // Never end Prism under a game of its own: its Java would carry on without it.
+            if (PrismGameIsUp(open)) return false;
+            foreach (Process p in open)
+            {
+                p.Kill();
+                if (!p.WaitForExit(6000)) return false;
+            }
+            return true;
         }
-        return false;
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static IEnumerable<Process> JavaProcesses()
+    {
+        return Process.GetProcessesByName("javaw").Concat(Process.GetProcessesByName("java"));
+    }
+
+    /// Java that was running before Prism was asked to start the game.
+    private HashSet<int> javaBefore = new HashSet<int>();
+
+    /// <summary>The game's own window has opened.</summary>
+    private bool GameIsUp()
+    {
+        // Its title is scrambled, so any new Java window will do: nothing else here opens one.
+        return JavaProcesses().Any(p => !javaBefore.Contains(p.Id) && p.MainWindowHandle != IntPtr.Zero);
+    }
+
+    /// <summary>A game Prism itself started, for this instance or another, loaded or still loading.</summary>
+    private static bool PrismGameIsUp(Process[] prisms)
+    {
+        HashSet<int> ids = new HashSet<int>(prisms.Select(p => p.Id));
+        Dictionary<int, int> parents = Parents();
+        return JavaProcesses().Any(p =>
+        {
+            int parent;
+            // Any Java of Prism's counts, window or not: a game still loading has none yet.
+            return parents.TryGetValue(p.Id, out parent) && ids.Contains(parent);
+        });
     }
 
     private Rectangle VersionBox(int i)

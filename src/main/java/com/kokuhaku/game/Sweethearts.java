@@ -112,6 +112,7 @@ final class Sweethearts {
 
     static void clear() {
         said.clear();
+        lastFondness = 0;
     }
 
     /** Three things you haven't said to her yet. When you've said them all, you start again. */
@@ -147,6 +148,27 @@ final class Sweethearts {
     }
 
     private static int lastFondness = 0;
+
+    /** She heard who you were with, and says so the next time you stop to talk, whatever time it is. Once. */
+    static String seenOpener(RunState s, Student who) {
+        if (s.seenWith < 0 || s.seenWith == who.id()) return null;
+        String line = String.format(seenWith(who.personality()), Roster.get(s.seenWith).firstName());
+        s.seenWith = -1;
+        s.markDirty();
+        return line;
+    }
+
+    /** What she says when she's heard you were out with someone else. The same for every girlfriend. */
+    private static String seenWith(Roster.Personality p) {
+        return switch (p) {
+            case CHEERFUL -> "So! %s. You two looked like you were having fun.";
+            case SHY -> "I-I saw you with %s. It's fine. It's fine.";
+            case COLD -> "%s. Really.";
+            case GOSSIP -> "Everyone's saying you were with %s. Everyone.";
+            case POLITE -> "I hope you enjoyed your afternoon with %s.";
+            case SPORTY -> "Hanging out with %s now? Cool. Cool cool.";
+        };
+    }
 
     /** The walk in, with her. A shuffled order that's the same all month, so nothing comes round again for days. */
     static List<Step> walk(RunState s, int speaker) {

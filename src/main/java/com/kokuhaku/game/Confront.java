@@ -16,6 +16,8 @@ import java.util.Random;
 final class Confront {
     static final String OPTION = "It's you. It's been you.";
     private static final Random RANDOM = new Random();
+    /** Time to read what she says before it counts anyway. */
+    private static final int SAID_ANYWAY = 20 * 15;
 
     private static final Map<Personality, String> SHE_SMILES = Map.of(
             Personality.CHEERFUL, "She doesn't stop smiling. If anything, she looks relieved. \"I knew you'd be the one to work it out! Isn't that lovely?\"",
@@ -58,5 +60,7 @@ final class Confront {
         if (!her) s.fondness[who.id()] = -5;
         s.markDirty();
         Talk.say(p, name, line, Talk.option("...", q -> RunManager.accuse(q, who.id())));
+        // It's said, whether or not you stay to hear the rest. Already done, this does nothing.
+        RunManager.later(SAID_ANYWAY, () -> RunManager.accuse(p, who.id()));
     }
 }

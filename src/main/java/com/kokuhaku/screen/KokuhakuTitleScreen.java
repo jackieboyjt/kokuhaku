@@ -52,6 +52,8 @@ public class KokuhakuTitleScreen extends Screen {
     private double lastMouseX = Double.NaN, lastMouseY = Double.NaN;
     private long lastMoveTime = System.currentTimeMillis();
     private boolean quitting = false;
+    /** Read once in init(), not every frame: it only changes when a run ends. */
+    private String endings = "";
     /** Only the first time: coming back from Settings shouldn't go dark again. */
     private static boolean cameUp = false;
 
@@ -76,6 +78,7 @@ public class KokuhakuTitleScreen extends Screen {
     @Override
     protected void init() {
         lastMoveTime = System.currentTimeMillis();
+        endings = EndingsBook.summary();
         int x = Math.max(24, width / 12);
         int y = height / 2;
         if (Party.isGuest(client)) {
@@ -269,7 +272,7 @@ public class KokuhakuTitleScreen extends Screen {
         // Minecraft's own &k: the letters never hold still, and there's nothing underneath to read.
         context.drawTextWithShadow(textRenderer, Text.literal("xxxxxxxx").formatted(Formatting.OBFUSCATED), 0, 0, 0xFFE8E2E4);
         context.getMatrices().pop();
-        context.drawTextWithShadow(textRenderer, KokuhakuClient.menuText(EndingsBook.summary()), x, height - 18, 0xFF6C6C74);
+        context.drawTextWithShadow(textRenderer, KokuhakuClient.menuText(endings), x, height - 18, 0xFF6C6C74);
         context.drawTextWithShadow(textRenderer, KokuhakuClient.menuText("someone left a note in your locker"),
                 x, height / 2 - 18, 0xFF8C7C80);
 

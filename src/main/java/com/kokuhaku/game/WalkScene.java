@@ -108,7 +108,7 @@ public final class WalkScene {
         if (Festival.on(s) && TrainRide.walkingWith >= 0) return List.of(TrainRide.walkingWith);
         Random r = new Random(s.seed ^ s.day * 31337L);
         List<Integer> free = new ArrayList<>();
-        for (StudentEntity e : RunManager.studentsOf(server)) if (!People.stayingHome(s, e.getSkin())) free.add(e.getSkin());
+        for (StudentEntity e : RunManager.studentsOf(server)) if (!People.notInFirstThing(s, e.getSkin())) free.add(e.getSkin());
         // Haruto shows the first of you round; he can only be in one place.
         if (s.day == 1 && free.contains(Roster.GIRLS)) return List.of(Roster.GIRLS);
         free.sort(Integer::compare);
@@ -148,7 +148,7 @@ public final class WalkScene {
         if (with.isEmpty() && !Living.active(s)) {
             Random r = new Random(s.seed ^ s.day * 7919L ^ p.getUuid().getLeastSignificantBits());
             List<StudentEntity> free = new ArrayList<>(RunManager.studentsOf(p.server));
-            free.removeIf(e -> busy.contains(e) || People.stayingHome(s, e.getSkin()) || e.hasVehicle());
+            free.removeIf(e -> busy.contains(e) || People.notInFirstThing(s, e.getSkin()) || e.hasVehicle());
             free.sort(java.util.Comparator.comparingInt(StudentEntity::getSkin));
             if (!free.isEmpty()) with.add(free.get(r.nextInt(free.size())).getSkin());
         }
@@ -165,6 +165,8 @@ public final class WalkScene {
         if (scene.people.isEmpty()) return false;
         scene.steps.addAll(WalkTalk.script(s, scene.people.stream().map(StudentEntity::getSkin).toList(), scene.ticks));
         scene.wait = 50;
+        // Anything still waiting on an answer from before is stale now: the walk mustn't answer it for you.
+        Talk.choose(p, -1);
         scenes.put(p.getUuid(), scene);
         Traffic.holdFor(p.getUuid(), points);
         if (!Living.active(s) && scene.people.stream().anyMatch(e -> s.mystery().isYandere(e.getSkin()))) Shadow.saw(s, "She walked right beside you, asking about your homework.");
@@ -173,7 +175,7 @@ public final class WalkScene {
         p.getServerWorld().setTimeOfDay(Schedule.worldTime(s.day, s.minute));
         RunManager.setBusy(p, true);
         Kokuhaku.LOG.info("Walking to school with {} over {} blocks, {} ticks", scene.people.stream().map(e -> Roster.get(e.getSkin()).firstName()).toList(), (int) scene.path.length(), scene.ticks);
-        RunManager.sendWalk(p, points, scene.ticks);
+        RunManager.sendWalk(p, points, scene.ticks, true);
         move(scene);
         return true;
     }
@@ -314,7 +316,7 @@ public final class WalkScene {
                 // Nobody waits forever for an answer. Saying nothing is an answer.
                 if (++scene.waited > ANSWER_TICKS) {
                     scene.waited = 0;
-                    Talk.choose(scene.player, 0);
+                    Talk.choose(scene.player, Talk.answers(scene.player) - 1);
                 }
                 continue;
             }
@@ -350,6 +352,8 @@ public final class WalkScene {
             Answer a = step.answers().get(i);
             options[i] = Talk.option(a.label(), q -> {
                 RunState s = RunManager.state(q.server);
+                // Walking in with her and talking is talking to her.
+                if (by.getSkin() == s.dating) Romance.talked(s, s.dating);
                 if (a.fondness() != 0 && by.getSkin() < Roster.GIRLS) {
                     s.fondness[by.getSkin()] = Math.max(-5, Math.min(5, s.fondness[by.getSkin()] + a.fondness()));
                     s.markDirty();
@@ -386,11 +390,15 @@ public final class WalkScene {
             e.noClip = false;
             e.setWalkTalking(false);
             e.settle();
+            // Wherever they were headed was worked out from back on the street.
+            e.replan();
         }
         ServerPlayerEntity p = scene.player;
         RunManager.setBusy(p, false);
         Vec3d end = scene.path.at(1);
         p.teleport(p.getServerWorld(), end.x, end.y, end.z, p.getYaw(), 0f);
+        // Cut short: the camera's still walking, so tell it to stop.
+        if (scene.age < scene.ticks && !p.isRemoved()) RunManager.sendWalkClock(p, -1);
     }
 
     /** You'd rather just get there. */

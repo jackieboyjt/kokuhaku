@@ -28,6 +28,8 @@ public final class Living {
     private static boolean inScene = false;
     /** Somebody's being asked to leave her chair. */
     private static boolean clearing = false;
+    /** The day and minute she last said how she feels, so each one is said once. */
+    private static int lastMood = -1;
     private static final int GETTING_UP = 25;
     private static final double AISLE = 1.5;
 
@@ -45,6 +47,7 @@ public final class Living {
     static void clear() {
         inScene = false;
         clearing = false;
+        lastMood = -1;
     }
 
     /** You said it. There's no room, no key and no door: you're just hers now. */
@@ -93,7 +96,9 @@ public final class Living {
             if (away < SETTLES_AT) e.getNavigation().stop();
             e.getLookControl().lookAt(p, 30f, 30f);
         }
-        if (s.minute % MOOD_MINUTES == 0 && ticks % Schedule.TICKS_PER_MINUTE == 0) {
+        int now = s.day * MIDNIGHT + s.minute;
+        if (s.minute % MOOD_MINUTES == 0 && now != lastMood) {
+            lastMood = now;
             RunManager.tell(p, "", moods(Roster.get(s.livingWith).personality())[RANDOM.nextInt(4)]);
         }
     }
@@ -174,6 +179,8 @@ public final class Living {
             new Ask("Am I the only one?", "Yes.", "What do you mean?", "Say it like you mean it next time.", "You know what I mean."),
             new Ask("How long can you go without looking away?", "As long as you want.", "Not long.", "Then don't. Keep looking.", "We'll practise."));
     private static final int ASKS_A_LESSON = 3, TOO_MANY_WRONG = 2;
+    /** Three minutes: long enough for anyone to answer her three times. */
+    private static final int LESSON_GIVES_UP = 20 * 180;
 
     /** The teacher talks. She doesn't look at the board once. She turns to you, and you can forget the lesson. */
     static void classTime(ServerPlayerEntity p, RunState s, StudentEntity e) {
@@ -185,10 +192,23 @@ public final class Living {
         p.networkHandler.requestTeleport(p.getX(), p.getY(), p.getZ(), yaw, 8f);
         List<Ask> asks = new java.util.ArrayList<>(ASKS);
         java.util.Collections.shuffle(asks, RANDOM);
-        RunManager.later(GETTING_UP * 2 + 10, () -> ask(p, s, e, asks.subList(0, ASKS_A_LESSON), 0, 0));
+        // Her questions belong to this lesson: once it's over, by the bell or by giving up, the rest go unasked.
+        int lesson = RunManager.lessonKey();
+        RunManager.later(GETTING_UP * 2 + 10, () -> ask(p, s, e, asks.subList(0, ASKS_A_LESSON), 0, 0, lesson));
+        // If her questions never got answered, the lesson still ends. Only this lesson, though, not the next one.
+        RunManager.later(LESSON_GIVES_UP, () -> {
+            if (RunManager.lessonKey() != lesson || !RunManager.inLesson(p)) return;
+            e.setStaring(false);
+            if (!active(s)) Seats.claim(null);
+            RunManager.classOver(p, s);
+        });
     }
 
-    private static void ask(ServerPlayerEntity p, RunState s, StudentEntity e, List<Ask> asks, int index, int wrong) {
+    private static void ask(ServerPlayerEntity p, RunState s, StudentEntity e, List<Ask> asks, int index, int wrong, int lesson) {
+        if (RunManager.lessonKey() != lesson || !RunManager.inLesson(p)) {
+            e.setStaring(false);
+            return;
+        }
         Student who = Roster.get(e.getSkin());
         if (index >= asks.size()) {
             e.setStaring(false);
@@ -208,8 +228,8 @@ public final class Living {
         Ask q = asks.get(index);
         String name = who.firstName();
         Talk.say(p, name, q.ask(), e.getId(),
-                Talk.option(q.good(), r -> Talk.say(r, name, q.glad(), e.getId(), Talk.option("...", t -> ask(t, s, e, asks, index + 1, wrong)))),
-                Talk.option(q.bad(), r -> Talk.say(r, name, q.hurt(), e.getId(), Talk.option("...", t -> ask(t, s, e, asks, index + 1, wrong + 1)))));
+                Talk.option(q.good(), r -> Talk.say(r, name, q.glad(), e.getId(), Talk.option("...", t -> ask(t, s, e, asks, index + 1, wrong, lesson)))),
+                Talk.option(q.bad(), r -> Talk.say(r, name, q.hurt(), e.getId(), Talk.option("...", t -> ask(t, s, e, asks, index + 1, wrong + 1, lesson)))));
     }
 
     /**

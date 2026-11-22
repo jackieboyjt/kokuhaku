@@ -49,11 +49,16 @@ public class WalkScreen extends CutsceneScreen {
     @Override
     protected void init() {
         GLFW.glfwSetInputMode(client.getWindow().getHandle(), GLFW.GLFW_CURSOR, options.isEmpty() ? GLFW.GLFW_CURSOR_HIDDEN : GLFW.GLFW_CURSOR_NORMAL);
-        int x = width / 2 - 170, y = height - 12 - options.size() * 15;
+        int x = width / 2 - half() + 10, y = height - 12 - options.size() * 15;
         for (int i = 0; i < options.size(); i++) {
             int option = i;
-            addDrawableChild(new MenuButton(x, y + i * 15, 340, 14, KokuhakuClient.menuText("> " + options.get(i)), b -> answer(option)));
+            addDrawableChild(new MenuButton(x, y + i * 15, half() * 2 - 20, 14, KokuhakuClient.menuText("> " + options.get(i)), b -> answer(option)));
         }
+    }
+
+    /** Half the box. Narrower on a small screen, so nothing hangs off the edge. */
+    private int half() {
+        return width >= 360 ? 180 : width / 2 - 6;
     }
 
     private void answer(int option) {
@@ -67,7 +72,7 @@ public class WalkScreen extends CutsceneScreen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == GLFW.GLFW_KEY_SPACE) ClientPlayNetworking.send(Net.SKIP_WALK, PacketByteBufs.empty());
+        if (keyCode == GLFW.GLFW_KEY_SPACE && Cutscene.skippable()) ClientPlayNetworking.send(Net.SKIP_WALK, PacketByteBufs.empty());
         return true;
     }
 
@@ -85,9 +90,9 @@ public class WalkScreen extends CutsceneScreen {
         int black = (int) (Cutscene.blackness() * 255);
         if (black > 0) context.fill(0, 0, width, height, black << 24);
         renderTray(context);
-        if (com.kokuhaku.client.ClientRun.tray == null) context.drawTextWithShadow(textRenderer, KokuhakuClient.menuText("Space: skip"), width - 72, 8, 0x80FFFFFF);
+        if (com.kokuhaku.client.ClientRun.tray == null && Cutscene.skippable()) context.drawTextWithShadow(textRenderer, KokuhakuClient.menuText("Space: skip"), width - 72, 8, 0x80FFFFFF);
         if (line.isEmpty() || options.isEmpty() && System.currentTimeMillis() - shown > LINGER_MS) return;
-        int left = width / 2 - 180, right = width / 2 + 180, top = height - BOX_HEIGHT;
+        int left = width / 2 - half(), right = width / 2 + half(), top = height - BOX_HEIGHT;
         context.fill(left, top, right, height - 8, 0xB0080608);
         context.drawTextWithShadow(textRenderer, KokuhakuClient.menuText(name), left + 10, top + 7, 0xFFE0283C);
         int count = (int) Math.min(line.length(), (System.currentTimeMillis() - shown) / 1000f * CHARS_PER_SECOND);

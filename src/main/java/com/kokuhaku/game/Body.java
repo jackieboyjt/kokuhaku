@@ -4,6 +4,7 @@ import com.kokuhaku.Kokuhaku;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.math.MathHelper;
 
 import java.util.List;
 
@@ -16,8 +17,8 @@ import java.util.List;
 public final class Body {
     /** Lost a game minute, in thousandths. Water goes half as fast again as food. */
     private static final int FOOD_A_MINUTE = 1, WATER_EVERY_OTHER = 1;
-    /** What a night takes, and what breakfast puts back, up to a point. */
-    private static final int NIGHT_FOOD = 120, NIGHT_WATER = 160, BREAKFAST_FOOD = 380, BREAKFAST_WATER = 320, BREAKFAST_UP_TO = 800;
+    /** What breakfast puts back, up to a point. The night takes what its hours take. */
+    private static final int BREAKFAST_FOOD = 380, BREAKFAST_WATER = 420, BREAKFAST_UP_TO = 800;
     /** Below these you feel it; at the second you can barely stand. */
     public static final int LOW = 250, EMPTY = 60;
     private static final int GRUMBLE_EVERY = 45;
@@ -42,6 +43,16 @@ public final class Body {
         return s.water[slot(s, p)];
     }
 
+    /** After breakfast: whether the night left you low on water, so breakfast couldn't put it right. */
+    public static boolean wokeThirsty(RunState s, ServerPlayerEntity p) {
+        return water(s, p) < BREAKFAST_WATER + LOW;
+    }
+
+    /** After breakfast: whether the night left you low on food. */
+    public static boolean wokeHungry(RunState s, ServerPlayerEntity p) {
+        return food(s, p) < BREAKFAST_FOOD + LOW;
+    }
+
     /** Something to eat or drink: how much food, how much water. */
     public static void eat(ServerPlayerEntity p, RunState s, int food, int water) {
         int i = slot(s, p);
@@ -53,6 +64,10 @@ public final class Body {
 
     /** The night, then breakfast at home. */
     static void morning(RunState s, List<ServerPlayerEntity> living) {
+        // A long night costs more than a short one. Nobody went to bed: half nine.
+        int bed = s.bedtime <= 0 ? 21 * 60 + 30 : s.bedtime;
+        int night = MathHelper.clamp(Schedule.WAKE + 1440 - bed, 420, 900);
+        int nightFood = night / 5, nightWater = night * 7 / 25;
         for (ServerPlayerEntity p : living) {
             int i = slot(s, p);
             if (fedForYou(s)) {
@@ -60,8 +75,8 @@ public final class Body {
                 s.water[i] = Math.max(s.water[i], BREAKFAST_UP_TO);
                 continue;
             }
-            s.food[i] = Math.max(0, s.food[i] - NIGHT_FOOD);
-            s.water[i] = Math.max(0, s.water[i] - NIGHT_WATER);
+            s.food[i] = Math.max(0, s.food[i] - nightFood);
+            s.water[i] = Math.max(0, s.water[i] - nightWater);
             if (s.food[i] < BREAKFAST_UP_TO) s.food[i] = Math.min(BREAKFAST_UP_TO, s.food[i] + BREAKFAST_FOOD);
             if (s.water[i] < BREAKFAST_UP_TO) s.water[i] = Math.min(BREAKFAST_UP_TO, s.water[i] + BREAKFAST_WATER);
         }

@@ -56,6 +56,16 @@ public class KokuhakuClient implements ClientModInitializer {
 
     /** Text in the menus' custom font. */
     private static final int NO_BLOOD = 0x303030;
+    /** Whether the host said hello with our protocol. Read on the network thread. */
+    private static volatile boolean sameVersion = false;
+    private static final String OTHER_VERSION = "Your friend is playing a different version of Kokuhaku. Close the game and open the launcher to update.";
+
+    /** Drops a host on another build, before its packets are read wrongly. */
+    private static boolean otherVersion(net.minecraft.client.network.ClientPlayNetworkHandler handler) {
+        if (sameVersion) return false;
+        handler.getConnection().disconnect(Text.literal(OTHER_VERSION));
+        return true;
+    }
 
     public static MutableText menuText(String s) {
         // The menu font stops at ordinary letters. Her marks need the plain one, or they come out as boxes.
@@ -115,6 +125,7 @@ public class KokuhakuClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             com.kokuhaku.client.GameSettings.tick(client);
             MenuScene.tick(client);
+            Party.tick();
             Voice.tick(client);
             WindowTitle.tick(client);
             unbindMovement(client);
@@ -137,12 +148,21 @@ public class KokuhakuClient implements ClientModInitializer {
         });
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> MenuScene.joined(client)));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            sameVersion = false;
             ClientRun.reset();
             com.kokuhaku.client.RadioPlayer.stop(client);
             Cutscene.stop();
             Party.reset();
             MenuScene.disconnected();
             Voice.stopAll();
+            com.kokuhaku.client.VoicePlayer.stop();
+            com.kokuhaku.client.OutfitSkins.clear();
+            com.kokuhaku.client.PhotoAlbum.clear(client);
+        });
+        ClientPlayNetworking.registerGlobalReceiver(Net.HELLO, (client, handler, buf, sender) -> {
+            int protocol = buf.readVarInt();
+            if (protocol == Net.PROTOCOL) sameVersion = true;
+            else handler.getConnection().disconnect(Text.literal(OTHER_VERSION));
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             Cutscene.tick();
@@ -154,7 +174,11 @@ public class KokuhakuClient implements ClientModInitializer {
             for (int i = 0; i < count; i++) members.add(new Party.Member(buf.readUuid(), buf.readString(), buf.readBoolean(), buf.readBoolean(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt()));
             client.execute(() -> Party.members = members);
         });
-        ClientPlayNetworking.registerGlobalReceiver(Net.RUN_START, (client, handler, buf, sender) -> client.execute(() -> MenuScene.runStarted(client)));
+        ClientPlayNetworking.registerGlobalReceiver(Net.RUN_START, (client, handler, buf, sender) -> client.execute(() -> {
+            // A new run: nobody's still in last run's clothes.
+            com.kokuhaku.client.OutfitSkins.clear();
+            MenuScene.runStarted(client);
+        }));
         ClientPlayNetworking.registerGlobalReceiver(Net.PEEK_PATH, (client, handler, buf, sender) -> {
             List<Vec3d> path = new ArrayList<>();
             int count = buf.readVarInt();
@@ -167,7 +191,10 @@ public class KokuhakuClient implements ClientModInitializer {
             byte[] data = buf.readByteArray(1024);
             Voice.play(client, who, gain, data); // right away: the game thread would only bunch them up
         });
-        ClientPlayNetworking.registerGlobalReceiver(Net.SHOT, (client, handler, buf, sender) -> client.execute(DevShots::take));
+        ClientPlayNetworking.registerGlobalReceiver(Net.SHOT, (client, handler, buf, sender) -> client.execute(() -> {
+            // Only the host's own client, or one with the dev variables, takes the shot. A guest never does.
+            if (DevShots.ON || client.getServer() != null) DevShots.take();
+        }));
         ClientPlayNetworking.registerGlobalReceiver(Net.RADIO, (client, handler, buf, sender) -> {
             boolean on = buf.readBoolean();
             net.minecraft.util.math.BlockPos at = buf.readBlockPos();
@@ -183,6 +210,8 @@ public class KokuhakuClient implements ClientModInitializer {
             int[] tracks = buf.readIntArray();
             client.execute(() -> {
                 com.kokuhaku.client.RadioPlayer.playlist = tracks;
+                // With it off, the bar and the play button go with a song this station has.
+                if (!com.kokuhaku.client.RadioPlayer.on() && tracks.length > 0 && java.util.Arrays.stream(tracks).noneMatch(t -> t == com.kokuhaku.client.RadioPlayer.track)) com.kokuhaku.client.RadioPlayer.track = tracks[0];
                 client.setScreen(new com.kokuhaku.screen.RadioScreen(under));
             });
         });
@@ -222,6 +251,9 @@ public class KokuhakuClient implements ClientModInitializer {
             client.execute(() -> client.setScreen(new com.kokuhaku.screen.HoopScreen(level)));
         });
         ClientPlayNetworking.registerGlobalReceiver(Net.GHOST, (client, handler, buf, sender) -> client.execute(() -> {
+            // Out of the chair: the room's scene gives the HUD back as it was, so that comes first.
+            Cutscene.stop();
+            JumpscareScreen.reset();
             client.options.hudHidden = false;
             ClientRun.ghost = true;
             client.setScreen(null);
@@ -237,6 +269,7 @@ public class KokuhakuClient implements ClientModInitializer {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(Net.STATE, (client, handler, buf, sender) -> {
+            if (otherVersion(handler)) return;
             int day = buf.readVarInt(), minute = buf.readVarInt(), guesses = buf.readVarInt();
             Difficulty difficulty = Difficulty.values()[buf.readVarInt()];
             RunState.Status status = RunState.Status.values()[buf.readVarInt()];
@@ -293,6 +326,7 @@ public class KokuhakuClient implements ClientModInitializer {
             client.execute(() -> ClientRun.reel = reel);
         });
         ClientPlayNetworking.registerGlobalReceiver(Net.PHONE_PING, (client, handler, buf, sender) -> {
+            if (otherVersion(handler)) return;
             String chat = buf.readString(), from = buf.readString(), body = buf.readString();
             boolean dead = buf.readBoolean(), photo = buf.readBoolean();
             int kind = buf.readVarInt();

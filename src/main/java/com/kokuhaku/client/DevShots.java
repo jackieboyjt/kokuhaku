@@ -14,12 +14,16 @@ public final class DevShots {
     }
 
     private static final boolean UI = "1".equals(System.getenv("KOKUHAKU_UI"));
-    private static int uiTicks = 0, menuShot = 0;
+    private static int uiTicks = 0, menuShot = 0, bagTicks = 0;
     private static net.minecraft.client.gui.screen.Screen menuTitle;
 
     /** Opens each game screen in turn and photographs it (KOKUHAKU_UI=1). */
     public static void uiTest(MinecraftClient client) {
         DevBot.tick(client);
+        if ("bag".equals(System.getenv("KOKUHAKU_STAGE")) && client.currentScreen instanceof com.kokuhaku.screen.BagScreen bag && ++bagTicks % 40 == 0 && bagTicks <= 80) {
+            if (bagTicks == 40) bag.devSuspects();
+            else take();
+        }
         if ("swim".equals(System.getenv("KOKUHAKU_STAGE")) && client.player != null) client.options.jumpKey.setPressed(client.player.isTouchingWater());
         if (System.getenv("KOKUHAKU_CAR") != null && ClientRun.active && ++uiTicks > 240 && uiTicks % 30 == 0) {
             take();
@@ -79,12 +83,14 @@ public final class DevShots {
                 }
                 case 340, 400, 430, 460 -> take();
                 case 350 -> {
+                    if (!(client.currentScreen instanceof LessonScreen)) return;
                     var f = LessonScreen.class.getDeclaredField("index");
                     f.setAccessible(true);
                     f.setInt(client.currentScreen, 2);
                     client.currentScreen.init(client, client.currentScreen.width, client.currentScreen.height);
                 }
                 case 405, 435 -> {
+                    if (!(client.currentScreen instanceof LessonScreen)) return;
                     var f = LessonScreen.class.getDeclaredField("index");
                     f.setAccessible(true);
                     f.setInt(client.currentScreen, uiTicks == 405 ? 3 : 5);

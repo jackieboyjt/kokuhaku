@@ -57,7 +57,8 @@ public final class Ward {
     }
 
     public static void discharged(ServerPlayerEntity p) {
-        admitted.remove(p.getUuid());
+        // Kept in overnight, you wake up free. Only a real stay lets go of you, so another scene keeps its hold.
+        if (admitted.remove(p.getUuid())) RunManager.setBusy(p, false);
         dismiss(p);
     }
 
@@ -130,11 +131,11 @@ public final class Ward {
             return;
         }
         if (s.yen >= 0) {
-            Talk.say(p, NURSE, "That's ¥" + bill + " for the treatment. It's come out of your money. You've ¥" + s.yen + " left.",
+            Talk.say(p, NURSE, "That's " + Schedule.yen(bill) + " for the treatment. It's come out of your money. You've " + Schedule.yen(s.yen) + " left.",
                     Talk.option("Okay.", q -> leave(q, s, false)));
             return;
         }
-        Talk.say(p, NURSE, "It's ¥" + bill + " for the treatment, and you haven't got it. So that's a debt of ¥" + (-s.yen) + " in your name. Anything you earn goes against it until it's cleared.",
+        Talk.say(p, NURSE, "It's " + Schedule.yen(bill) + " for the treatment, and you haven't got it. So that's a debt of " + Schedule.yen(-s.yen) + " in your name. Anything you earn goes against it until it's cleared.",
                 Talk.option("I'll pay it back.", q -> Talk.say(q, NURSE, "They all say that. Rest. Somebody's asked to see you.",
                         Talk.option("Who?", r -> visitor(r, s)))));
     }
@@ -151,7 +152,7 @@ public final class Ward {
         dismiss(p);
         Vec3d head = bed.bedCenter();
         Vec3d chair = footOfBed(bed);
-        Kokuhaku.LOG.info("{} came to the hospital (yandere: {})", who.firstName(), her);
+        Kokuhaku.LOG.info("{} came to the hospital", who.firstName());
         if (her) Shadow.saw(s, "She came to see you in hospital. She counted your breaths.");
         RunManager.sendBlack(p, bed, VISIT_TICKS, "");
         RunManager.later(VISIT_TICKS, () -> {
@@ -178,14 +179,14 @@ public final class Ward {
     private static void afterVisit(ServerPlayerEntity p, RunState s, Student who, boolean her) {
         s.fondness[who.id()] = Math.min(5, s.fondness[who.id()] + 1);
         boolean paid = false;
-        if (her) {
-            s.yen = 0;
-            s.blackmailer = who.id();
-            s.blackmailDue = s.day + FIRST_NOTE_AFTER;
-            paid = true;
-        } else if (RANDOM.nextFloat() < FUND_CHANCE[Math.min(1, s.difficulty.ordinal())]) {
+        if (her || RANDOM.nextFloat() < FUND_CHANCE[Math.min(1, s.difficulty.ordinal())]) {
             s.yen = 0;
             paid = true;
+            // Whoever really paid, she hears it was settled and claims it. The envelope says nothing about who sat by the bed.
+            if (s.blackmailer < 0) {
+                s.blackmailer = s.freeYandere();
+                s.blackmailDue = s.day + FIRST_NOTE_AFTER;
+            }
         }
         s.markDirty();
         boolean settled = paid;
@@ -195,6 +196,8 @@ public final class Ward {
 
     /** Time passes in the bed. Alone it's hours of your day; with a party the others can't be kept waiting. */
     private static void leave(ServerPlayerEntity p, RunState s, boolean paid) {
+        // A nurse's line left open overnight does nothing once you've been sent home.
+        if (!isAdmitted(p)) return;
         dismiss(p);
         if (paid) s.notes.add("Someone paid your hospital bill and didn't leave a name.");
         int level = s.difficulty.ordinal();
@@ -206,7 +209,7 @@ public final class Ward {
             RunManager.overnight(p, s);
             return;
         }
-        RunManager.skipMinutes(p.server, s, minutes);
+        RunManager.jumpMinutes(p.server, s, minutes);
         Town.Home bed = RunManager.ward(s, p);
         RunManager.sendBlack(p, bed, LATER_TICKS, minutes > 0 ? (minutes / 60) + " hours later" : "");
         RunManager.later(LATER_TICKS, () -> RunManager.getUp(p, s, bed));
@@ -246,7 +249,7 @@ public final class Ward {
         };
         String name = "The envelope";
         switch (stage) {
-            case 0 -> Talk.say(p, name, "\"I paid for you. Every yen. Isn't that what people do for someone they love? Bring ¥" + DEMAND_YEN + " to the shoe lockers. I want to see what you'd give up for me.\"",
+            case 0 -> Talk.say(p, name, "\"I paid for you. Every yen. Isn't that what people do for someone they love? Bring " + Schedule.yen(DEMAND_YEN) + " to the shoe lockers. I want to see what you'd give up for me.\"",
                     Talk.option("Leave the money.", q -> {
                         s.yen -= DEMAND_YEN;
                         s.markDirty();
@@ -285,11 +288,12 @@ public final class Ward {
 
     private static void burn(RunState s) {
         List<Integer> traits = new ArrayList<>();
-        for (int id : s.found) if (id > 0 && id < s.mystery().clues.size()) traits.add(id);
+        // Only what somebody told you about her. Notes, hunches and alibis aren't hers to want.
+        for (int id : s.found) if (id > 0 && id < s.mystery().clues.size() && s.mystery().clue(id).kind() == Mystery.Kind.TRAIT) traits.add(id);
         java.util.Collections.shuffle(traits, RANDOM);
         for (int i = 0; i < 2 && i < traits.size(); i++) {
             s.found.remove(traits.get(i));
-            s.atScene.add(traits.get(i)); // gone for good: nobody tells you twice
+            s.burned.add(traits.get(i)); // gone for good: nobody tells you twice
         }
         s.markDirty();
     }

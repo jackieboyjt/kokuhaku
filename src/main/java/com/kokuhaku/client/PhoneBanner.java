@@ -32,6 +32,7 @@ public final class PhoneBanner {
         String what = photo ? "Photo" : kind == Phone.LOCATION ? "Location: " + body : kind == Phone.VOICE ? "Voice message" : dead && !ClientRun.ghost ? GhostGlyphs.scramble(body, body.hashCode(), PhoneScreen.DEAD_LOST) : GhostGlyphs.filter(body, body.hashCode());
         line = who + what;
         since = System.currentTimeMillis();
+        Mannerisms.buzz("Class 2-A".equals(chat));
     }
 
     public static void render(DrawContext ctx, float tickDelta) {

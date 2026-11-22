@@ -63,7 +63,9 @@ public final class Townsfolk {
             }
             return;
         }
-        for (int i = 0; i < BACK_AT_ONCE && people.size() + i < wanted && !streets.isEmpty(); i++) {
+        // Half as many bother going out in the snow. Nobody's sent in; the streets just don't fill back up.
+        int cap = Schedule.isSnowDay(s.day) ? wanted / 2 : wanted;
+        for (int i = 0; i < BACK_AT_ONCE && people.size() + i < cap && !streets.isEmpty(); i++) {
             BlockPos at = town.graph.pos(streets.get(RANDOM.nextInt(streets.size())));
             if (world.getClosestPlayer(at.getX(), at.getY(), at.getZ(), OUT_OF_SIGHT, false) != null) continue;
             StudentEntity e = Kokuhaku.STUDENT.create(world);
@@ -101,6 +103,15 @@ public final class Townsfolk {
         List<StudentEntity> people = new ArrayList<>(server.getOverworld().getEntitiesByType(Kokuhaku.STUDENT, e -> isOne(e) && !Teachers.isOne(e) && !e.hasVehicle() && !e.isAiDisabled()));
         java.util.Collections.shuffle(people, RANDOM);
         for (int i = 0; i < THIN_BY && i < people.size(); i++) people.get(i).discard();
+    }
+
+    /** A Continue in a fresh town: the streets as quiet as they'd got by that day, all at once. */
+    public static void thinTo(MinecraftServer server, int day) {
+        if (day < THIN_FROM) return;
+        wanted = Math.max(0, PEOPLE - THIN_BY * (day - THIN_FROM + 1));
+        List<StudentEntity> people = new ArrayList<>(server.getOverworld().getEntitiesByType(Kokuhaku.STUDENT, e -> isOne(e) && !Teachers.isOne(e) && !e.hasVehicle() && !e.isAiDisabled()));
+        java.util.Collections.shuffle(people, RANDOM);
+        for (int i = wanted; i < people.size(); i++) people.get(i).discard();
     }
 
     /** Behind the desk at the hospital, all day, every day. */

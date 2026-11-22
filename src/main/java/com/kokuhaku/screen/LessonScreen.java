@@ -245,7 +245,8 @@ public class LessonScreen extends Screen {
         // Your own arm, going up.
         if (handUpAt > 0) {
             float up = Math.min(1f, (System.currentTimeMillis() - handUpAt) / 300f);
-            ArmView.draw(context, StudentSkins.texture(0), false, width * 0.8f, height * (1.1f - up * 0.62f), -6f, height * 0.95f, 1f);
+            boolean you = client != null && client.player != null;
+            ArmView.draw(context, you ? client.player.getSkinTexture() : StudentSkins.YOU, !you || ArmView.thin(client.player), width * 0.8f, height * (1.1f - up * 0.62f), -6f, height * 0.95f, 1f);
         }
         int ox = g ? random.nextInt(5) - 2 : 0, oy = g ? random.nextInt(5) - 2 : 0;
         String text = q.getString("Text");

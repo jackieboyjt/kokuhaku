@@ -30,7 +30,8 @@ $misc = "OverrideMiscellaneous=true`nCloseAfterLaunch=true`nQuitAfterGameStop=tr
 if (Test-Path 'tools\launcher\map.txt') { Copy-Item 'tools\launcher\map.txt' "$instance\map.txt" }
 $pack = [regex]::Match($installer, "\`$pack = '(.*?)'").Groups[1].Value
 [IO.File]::WriteAllText("$instance\mmc-pack.json", $pack, $u)
-$jar = Get-Item 'dist\Kokuhaku\game\mods\kokuhaku-0.1.0.jar'
+$modVersion = (Select-String 'gradle.properties' -Pattern '^mod_version=(.+)$').Matches[0].Groups[1].Value.Trim()
+$jar = Get-Item "dist\Kokuhaku\game\mods\kokuhaku-$modVersion.jar"
 # The mods and the settings count too, so a change to either reinstalls even when Kokuhaku's own jar hasn't changed.
 $everything = ((Get-ChildItem 'dist\Kokuhaku\game\mods' -Filter '*.jar' | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Length)" }) -join ';') + $cfg
 $sha = [Security.Cryptography.SHA1]::Create()

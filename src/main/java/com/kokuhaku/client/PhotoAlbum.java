@@ -43,6 +43,19 @@ public final class PhotoAlbum {
         return photos.get(id);
     }
 
+    /** Forgets every picture, on leaving: another server's numbers start again from one. */
+    public static void clear(MinecraftClient client) {
+        for (Identifier id : photos.values()) client.getTextureManager().destroyTexture(id);
+        photos.clear();
+        if (behind) {
+            client.options.setPerspective(was);
+            client.options.hudHidden = hudWas;
+        }
+        behind = false;
+        pending = -1;
+        frames = 0;
+    }
+
     /** Counts the frames drawn from behind. */
     public static void frameDrawn() {
         if (behind) frames++;

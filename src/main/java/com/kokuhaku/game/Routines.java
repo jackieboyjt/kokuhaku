@@ -47,6 +47,8 @@ public final class Routines {
         Random friends = new Random(s.seed ^ (s.day * 6151L) ^ (group(st) * 49157L));
         // Somebody's always running late.
         if (daily.nextInt(LATE_ONE_IN) == 0) leaveHome += RUNNING_LATE;
+        // Off first thing, then in after all: through the gate around the first break, the rest of the day as normal.
+        if (Schedule.isSchoolDay(s.day) && People.late(s, id)) leaveHome = Math.max(leaveHome, Schedule.PERIOD_START[1] - 20);
 
         if (Festival.on(s)) {
             // All of them, all day, in their own time.
@@ -54,10 +56,13 @@ public final class Routines {
             if (m < arrive || m >= leave) return home(id, s, town);
             return scattered("festival", "field", town, daily, 9);
         }
+        // Somewhere she'd rather nobody knew about. Always after lessons.
+        Target secret = Secrets.out(id, s, town);
+        if (secret != null) return secret;
         if (!Schedule.isSchoolDay(s.day)) {
             int out = WEEKEND_OUT + daily.nextInt(150), back = WEEKEND_BACK + daily.nextInt(120);
             if (m < out || m >= back) return home(id, s, town);
-            return scattered("hangout", Rain.indoors(s) ? UNDER_A_ROOF[friends.nextInt(UNDER_A_ROOF.length)] : HANGOUTS[friends.nextInt(HANGOUTS.length)], town, daily, 6);
+            return scattered("hangout", hangoutFor(group(st), s), town, daily, 6);
         }
         if (m < leaveHome || m >= goHome || People.stayingHome(s, id)) return home(id, s, town);
         if (m >= Schedule.AFTER_SCHOOL) return Rain.indoors(s) && s.mystery().clubs[id] == Club.TENNIS ? scattered("club", "gym", town, daily, 3) : club(s.mystery().clubs[id], town, daily);
@@ -71,17 +76,23 @@ public final class Routines {
         List<String> subjects = Schedule.subjects(s.seed + group, Schedule.weekday(s.day));
         for (int p = 0; p < Schedule.PERIOD_START.length; p++) {
             int start = Schedule.PERIOD_START[p];
-            if (m >= start && m < start + Schedule.PERIOD_LENGTH) return lesson(subjects.get(p), st, group, town, daily, s.day);
+            if (m >= start && m < start + Schedule.PERIOD_LENGTH) return lesson(subjects.get(p), st, group, town, daily, s, p);
         }
         if (m < Schedule.PERIOD_START[0]) return seat(st, group, Schedule.homeroomFor(group), town);
         // A break between lessons: out in the hall by wherever you're due next.
         for (int p = 0; p < Schedule.PERIOD_START.length; p++) {
             if (Schedule.PERIOD_START[p] > m) {
-                int next = Schedule.roomFor(group, subjects.get(p));
+                int next = Schedule.roomFor(s.seed, Schedule.weekday(s.day), p, group);
                 return scattered("break", "hall:" + Schedule.roomKey(next == 0 ? Schedule.homeroomFor(group) : next), town, daily, 4);
             }
         }
         return scattered("break", "hall:" + Schedule.roomKey(Schedule.homeroomFor(group)), town, daily, 4);
+    }
+
+    /** Where a friend group spends a day off: the same draw target() makes, so a plan in the class chat is where they go. */
+    public static String hangoutFor(int group, RunState s) {
+        Random friends = new Random(s.seed ^ (s.day * 6151L) ^ (group * 49157L));
+        return Rain.indoors(s) ? UNDER_A_ROOF[friends.nextInt(UNDER_A_ROOF.length)] : HANGOUTS[friends.nextInt(HANGOUTS.length)];
     }
 
     private static Target home(int id, RunState s, Town town) {
@@ -98,8 +109,9 @@ public final class Routines {
         return (st.homeroom() == Homeroom.A ? 0 : 3) + index % 3;
     }
 
-    private static Target lesson(String subject, Student st, int group, Town town, Random daily, int day) {
-        int room = Schedule.roomFor(group, subject);
+    private static Target lesson(String subject, Student st, int group, Town town, Random daily, RunState s, int period) {
+        int day = s.day;
+        int room = Schedule.roomFor(s.seed, Schedule.weekday(day), period, group);
         if (Schedule.practical(subject, day)) return scattered("lesson:" + subject, Schedule.practicalPlace(subject), town, daily, 2);
         return room == 0 ? scattered("lesson:" + subject, Schedule.swimming(day) ? "pool" : "gym", town, daily, 3) : seat(st, group, room, town);
     }

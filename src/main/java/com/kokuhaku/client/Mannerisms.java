@@ -3,12 +3,17 @@ package com.kokuhaku.client;
 import com.kokuhaku.entity.StudentEntity;
 import com.kokuhaku.game.Roster;
 import com.kokuhaku.game.Roster.Personality;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.entity.model.PlayerEntityModel;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.WeakHashMap;
 
 /**
@@ -31,7 +36,7 @@ final class Mannerisms {
 
     /** Everyone goes from one thing to the next at their own pace, so each of them keeps track of how far they've got. */
     private static final class Easing {
-        float sat, chat, speak, wave, turn, lastYaw, clock, lastTurn, lastMoved;
+        float sat, chat, speak, wave, turn, clock, lastTurn, lastMoved;
         long last, lastFrame;
         boolean wasSat;
         /** Where they last stood, and where they stepped off from to sit. */
@@ -40,7 +45,32 @@ final class Mannerisms {
 
     private static final Map<StudentEntity, Easing> EASING = new WeakHashMap<>();
 
+    /** Who's looked at their phone because yours went, and from when till when. Yours alone: nobody else sees it. */
+    private static final Map<StudentEntity, long[]> BUZZED = new WeakHashMap<>();
+    private static final Random BUZZ = new Random();
+
     private Mannerisms() {
+    }
+
+    /** Your phone goes, and a moment later somebody near you gets theirs out too. The class chat, and a few of them do. */
+    static void buzz(boolean classChat) {
+        MinecraftClient c = MinecraftClient.getInstance();
+        if (c.player == null || c.world == null || !ClientRun.active) return;
+        long now = System.currentTimeMillis();
+        BUZZED.values().removeIf(b -> now > b[1]);
+        List<StudentEntity> near = new ArrayList<>(c.world.getEntitiesByClass(StudentEntity.class, c.player.getBoundingBox().expand(20),
+                e -> e.getPeek() == 0 && e.getSkin() < Roster.TOTAL && !e.isSittingDown() && !e.isSpeaking() && !e.isChatting()));
+        Collections.shuffle(near, BUZZ);
+        List<StudentEntity> chosen = new ArrayList<>();
+        if (classChat) {
+            for (StudentEntity e : near) if (chosen.size() < 4 && BUZZ.nextFloat() < 0.35f) chosen.add(e);
+        } else if (!near.isEmpty()) {
+            chosen.addAll(near.subList(0, Math.min(near.size(), BUZZ.nextFloat() < 0.5f ? 2 : 1)));
+        }
+        for (StudentEntity e : chosen) {
+            long start = now + 150 + BUZZ.nextInt(551);
+            BUZZED.put(e, new long[]{start, start + 2500 + BUZZ.nextInt(1501)});
+        }
     }
 
     private static float toward(float now, float want, float rate, float seconds) {
@@ -53,7 +83,6 @@ final class Mannerisms {
             s.sat = k.isSittingDown() ? 1f : 0f;
             s.clock = s.sat;
             s.wasSat = k.isSittingDown();
-            s.lastYaw = k.bodyYaw;
             s.last = s.lastFrame = System.currentTimeMillis();
             return s;
         });
@@ -68,6 +97,14 @@ final class Mannerisms {
     static void frame(StudentEntity e, Vec3d at) {
         Easing s = easing(e);
         long now = System.currentTimeMillis();
+        if (now - s.lastFrame > 250) {
+            // Not drawn for a while, so whatever they did happened out of sight: they're simply where they are now.
+            boolean sit = e.isSittingDown();
+            s.clock = sit ? 1f : 0f;
+            s.wasSat = sit;
+            s.from = null;
+            if (!sit) s.stood = at;
+        }
         float seconds = Math.min(0.1f, (now - s.lastFrame) / 1000f);
         s.lastFrame = now;
         boolean sitting = e.isSittingDown();
@@ -156,7 +193,7 @@ final class Mannerisms {
         long slot = (long) (clock / IDLE_SLOT);
         float t = (clock % IDLE_SLOT) / IDLE_SLOT, w = held(t) * amount;
         // Feet turned out a little, the knee on the resting side gone soft, and eyes that don't stay in one place.
-        float side = MathHelper.sin((age + e.getId() * 91f) * 0.017f);
+        float side = MathHelper.sin((age + Math.floorMod(e.getId(), 997) * 91f) * 0.017f);
         m.rightLeg.yaw += 0.07f * amount;
         m.leftLeg.yaw -= 0.07f * amount;
         m.rightLeg.pitch -= 0.08f * Math.max(0f, side) * amount;
@@ -365,7 +402,8 @@ final class Mannerisms {
 
     /** Everything but the head, which the caller has already pointed at what they're looking at. */
     static void apply(PlayerEntityModel<StudentEntity> m, StudentEntity e, float age, float limbPos, float limbSpeed, boolean sitting) {
-        float clock = age + e.getId() * 173f;
+        // The id only staggers them, so keep it small: a float clock in the millions loses the part-ticks and steps.
+        float clock = age + Math.floorMod(e.getId(), 997) * 173f;
         Easing s = easing(e);
         long now = System.currentTimeMillis();
         float seconds = Math.min(0.1f, (now - s.last) / 1000f);
@@ -374,8 +412,8 @@ final class Mannerisms {
         s.chat = toward(s.chat, e.isChatting() ? 1f : 0f, CHANGE_RATE, seconds);
         s.speak = toward(s.speak, e.isSpeaking() ? 1f : 0f, CHANGE_RATE, seconds);
         s.wave = toward(s.wave, e.isWaving() ? 1f : 0f, CHANGE_RATE, seconds);
-        float turning = seconds > 0f ? Math.abs(MathHelper.wrapDegrees(e.bodyYaw - s.lastYaw)) / seconds : 0f;
-        s.lastYaw = e.bodyYaw;
+        // Degrees a second over the last tick, which comes out the same however often they're drawn.
+        float turning = Math.abs(MathHelper.wrapDegrees(e.bodyYaw - e.prevBodyYaw)) * 20f;
         s.turn = toward(s.turn, turning > SHUFFLE_FROM && limbSpeed < SHUFFLE_BELOW ? 1f : 0f, TURN_RATE, seconds);
 
         // Sitting down and standing up go through the pose, not round it.
@@ -405,6 +443,17 @@ final class Mannerisms {
         m.rightLeg.pitch += shuffle;
         m.leftLeg.pitch -= shuffle;
         if (s.wave > 0.01f) waving(m, age, s.wave);
+        // Theirs went when yours did, or they only thought it had: a look, and back in the pocket.
+        long[] b = BUZZED.get(e);
+        if (b != null) {
+            if (now > b[1]) BUZZED.remove(e);
+            else if (now >= b[0] && !sitting) {
+                float w = ease((now - b[0]) / 250f) * ease((b[1] - now) / 300f);
+                arm(m.rightArm, w, -1.15f, -0.4f, 0f);
+                arm(m.leftArm, w, -0.9f, 0.3f, 0f);
+                m.head.pitch += 0.5f * w;
+            }
+        }
 
         m.jacket.copyTransform(m.body);
         m.rightSleeve.copyTransform(m.rightArm);
@@ -417,7 +466,7 @@ final class Mannerisms {
     static float lean(StudentEntity e, float age, float limbPos, float limbSpeed, boolean sitting) {
         if (sitting) return 0f;
         float walk = walkAmount(limbSpeed), sway = kind(e) == Personality.COLD ? 0.7f : kind(e) == Personality.SPORTY ? 1.8f : 1.3f;
-        return MathHelper.lerp(walk, MathHelper.sin((age + e.getId() * 91f) * 0.017f) * 1.5f, MathHelper.cos(limbPos * STRIDE_RATE) * sway);
+        return MathHelper.lerp(walk, MathHelper.sin((age + Math.floorMod(e.getId(), 997) * 91f) * 0.017f) * 1.5f, MathHelper.cos(limbPos * STRIDE_RATE) * sway);
     }
 
     /** Up onto each step and down off it. */

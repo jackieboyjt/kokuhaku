@@ -1,5 +1,6 @@
 package com.kokuhaku.game;
 
+import com.kokuhaku.Difficulty;
 import com.kokuhaku.Kokuhaku;
 import com.kokuhaku.entity.StudentEntity;
 import com.kokuhaku.game.Roster.Student;
@@ -145,11 +146,18 @@ public final class Grab {
     static String torn(RunState s) {
         Student her = Roster.get(s.freeYandere());
         int level = Math.max(1, s.difficulty.ordinal());
-        return switch (RANDOM.nextInt(3)) {
-            case 0 -> "Torn off in the struggle: a few strands. " + her.hair().phrase(level);
-            case 1 -> "Torn off in the struggle: a button and some thread. " + her.homeroom().phrase(level);
-            default -> "What you smelled, when she held you: " + s.mystery().clubs[her.id()].phrase(level);
-        };
+        if (s.difficulty == Difficulty.EASY) {
+            return switch (RANDOM.nextInt(3)) {
+                case 0 -> "Torn off in the struggle: a few strands. " + her.hair().phrase(level);
+                case 1 -> "Torn off in the struggle: a button and some thread. " + her.homeroom().phrase(level);
+                default -> "What you smelled, when she held you: " + s.mystery().clubs[her.id()].phrase(level);
+            };
+        }
+        // Something that fits her and at least two others, where there is one.
+        Traits.Phrased t = s.mystery().trace(s, List.<Traits.Phrased>of(her.hair(), her.length(), her.homeroom(), s.mystery().clubs[her.id()]), RANDOM);
+        if (t instanceof Traits.Hair || t instanceof Traits.Length) return "Torn off in the struggle: a few strands. " + t.phrase(level);
+        if (t instanceof Traits.Homeroom) return "Torn off in the struggle: a button and some thread. " + t.phrase(level);
+        return "What you smelled, when she held you: " + t.phrase(level);
     }
 
     private static void keepWhatFell(RunState s) {

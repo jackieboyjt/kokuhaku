@@ -122,9 +122,9 @@ final class WalkTalk {
                 new Step(0, "People will talk to you if you right-click them. Ask them about themselves and it all goes in your bag. Press E to look through it.", List.of()),
                 new Step(0, "Your bag's got every girl's name in it, under Suspects. I don't know why I said suspects. Girls. It's got the girls in it.", List.of()),
                 new Step(0, "Look, I'm not supposed to say this. Check your shoe locker. Entrance hall, right where we're headed. People leave things.", List.of()),
-                new Step(0, "If it's what I think it is, don't throw it away. Ask around. Find out who it was before she does anything. You've got thirty days.", List.of()),
+                new Step(0, "If it's what I think it is, don't throw it away. Ask around. Find out who it was before she does anything. You've got two weeks.", List.of()),
                 new Step(0, "And get home before curfew, sleep in your own bed, and lock your front door. Hold your key and right-click it. Every night. I mean it.", List.of()),
-                new Step(0, "Oh, and cross at the white lines. Cars don't stop for anybody round here. See you in class.", List.of()));
+                new Step(0, "Oh, and eat. Drink more than you think you need: machines by the gate, lunch in the hall. And cross at the white lines. Cars don't stop for anybody round here. See you in class.", List.of()));
     }
 
     /** She walks you in herself now. */

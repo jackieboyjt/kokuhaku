@@ -7,6 +7,7 @@ import com.kokuhaku.game.Roster.Student;
 import com.kokuhaku.world.town.Town;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
@@ -63,6 +64,8 @@ final class Kept {
 
     private static int fractures = 0, still = 0, stray = 0, atDesk = 0, trustSince = 1, stashed = 0;
     private static boolean tablets = false, teaCan = false, asleep = false, rockRead = false, hospitalDue = false, deskUsed = false, leading = false;
+    /** The wrong word's been said. She's on her way, and nothing else happens till she gets there. */
+    private static boolean caught = false;
     private static Vec3d last = Vec3d.ZERO;
     private static String goal = "";
 
@@ -72,9 +75,36 @@ final class Kept {
     static void clear() {
         fractures = still = stray = atDesk = stashed = 0;
         trustSince = 1;
-        tablets = teaCan = asleep = rockRead = hospitalDue = deskUsed = leading = false;
+        tablets = teaCan = asleep = rockRead = hospitalDue = deskUsed = leading = caught = false;
         last = Vec3d.ZERO;
         goal = "";
+    }
+
+    /** For the save: how far the plan's got, and what it's cost you. Not where she's walking you, or whether she's asleep. */
+    static NbtCompound write() {
+        NbtCompound nbt = new NbtCompound();
+        nbt.putInt("Fractures", fractures);
+        nbt.putInt("TrustSince", trustSince);
+        nbt.putInt("Stashed", stashed);
+        nbt.putBoolean("Tablets", tablets);
+        nbt.putBoolean("TeaCan", teaCan);
+        nbt.putBoolean("RockRead", rockRead);
+        nbt.putBoolean("HospitalDue", hospitalDue);
+        nbt.putBoolean("DeskUsed", deskUsed);
+        return nbt;
+    }
+
+    /** The plan as it was saved. */
+    static void read(NbtCompound nbt) {
+        clear();
+        fractures = nbt.getInt("Fractures");
+        trustSince = nbt.contains("TrustSince") ? nbt.getInt("TrustSince") : 1;
+        stashed = nbt.getInt("Stashed");
+        tablets = nbt.getBoolean("Tablets");
+        teaCan = nbt.getBoolean("TeaCan");
+        rockRead = nbt.getBoolean("RockRead");
+        hospitalDue = nbt.getBoolean("HospitalDue");
+        deskUsed = nbt.getBoolean("DeskUsed");
     }
 
     static boolean on(RunState s) {
@@ -83,11 +113,11 @@ final class Kept {
 
     /** While she's out cold, the night's your own. */
     static int curfew(RunState s, int otherwise) {
-        return on(s) && asleep ? NIGHT_OUT : otherwise;
+        return on(s) && (asleep || caught) ? NIGHT_OUT : otherwise;
     }
 
     static boolean free(RunState s) {
-        return on(s) && asleep;
+        return on(s) && (asleep || caught);
     }
 
     static int fractures() {
@@ -123,7 +153,8 @@ final class Kept {
         // The same round, in an order only she knows.
         List<String> round = new ArrayList<>(List.of(ERRANDS));
         Collections.shuffle(round, new Random(s.seed ^ 0x4B455054L));
-        return town.place(round.get((s.day + (m - Schedule.AFTER_SCHOOL) / 90) % round.size()));
+        // Floor modulo: on a snow day early in the week the morning step is negative.
+        return town.place(round.get(Math.floorMod(s.day + (m - Schedule.AFTER_SCHOOL) / 90, round.size())));
     }
 
     private static void lead(ServerPlayerEntity p, RunState s, StudentEntity e, Town town) {
@@ -144,6 +175,7 @@ final class Kept {
 
     /** Twice a second. */
     static void tick(ServerPlayerEntity p, RunState s, StudentEntity e) {
+        if (caught) return;
         Town town = RunManager.town();
         if (asleep) {
             e.setHeld(true);
@@ -228,7 +260,7 @@ final class Kept {
             p.teleport(p.getServerWorld(), in.x, in.y, in.z, p.getYaw(), 0f);
             e.placeAt("beside", in.add(1, 0, 0));
             goal = "";
-            RunManager.skipMinutes(p.server, s, LOST_HOURS);
+            RunManager.jumpMinutes(p.server, s, LOST_HOURS);
         });
         RunManager.later(TAKEN_TICKS, () -> RunManager.setBusy(p, false));
     }
@@ -362,6 +394,7 @@ final class Kept {
                     Kokuhaku.LOG.info("Wrong word at the gate");
                     RunManager.tell(q, "", "The barrier stays down. Somewhere behind you, you hear someone running. She's never run before.");
                     asleep = false;
+                    caught = true;
                     RunManager.later(60, () -> RunManager.finalBlow(q, s));
                 }
             }));

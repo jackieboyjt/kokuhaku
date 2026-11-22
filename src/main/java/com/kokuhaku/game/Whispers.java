@@ -6,12 +6,8 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
-import java.util.Set;
 
 /**
  * She saw that. Everything you did yesterday is remembered, and the note under
@@ -25,11 +21,10 @@ final class Whispers {
     private static final Random RANDOM = new Random();
 
     private static int lastGirl = -1, wrongGuess = -1, flowers = 0, warned = -1;
-    /** Which days you spent time with each girl, and who you've been told to stay away from. */
-    private static final Map<Integer, Set<Integer>> daysWith = new HashMap<>();
-    private static final Set<Integer> warnedAbout = new HashSet<>();
+    // Which days you spent time with each girl, and who you've been told to stay away from, are kept with the run.
     private static String drink = null;
-    private static boolean worked, absent, doorOpen, doorShut, skippedWalk, foundClue, wasHurt;
+    private static boolean worked, absent, doorOpen, doorShut, skippedWalk, foundClue;
+    private static String hurtBy = null;
 
     private static final List<List<String>> ANY_DAY = List.of(
             List.of("You look so peaceful when you sleep. Please keep doing that.", "I had a dream about you. We were very old.", "You're the first thing I think about. I wanted you to know."),
@@ -43,8 +38,6 @@ final class Whispers {
     static void reset() {
         lastGirl = wrongGuess = warned = -1;
         flowers = 0;
-        daysWith.clear();
-        warnedAbout.clear();
         drink = null;
         forget();
     }
@@ -53,15 +46,21 @@ final class Whispers {
         lastGirl = -1;
         wrongGuess = -1;
         drink = null;
-        worked = absent = doorOpen = doorShut = skippedWalk = foundClue = wasHurt = false;
+        worked = absent = doorOpen = doorShut = skippedWalk = foundClue = false;
+        hurtBy = null;
     }
 
     /** She asked you not to. If you do it anyway, she won't ask again. */
     static void talkedTo(RunState s, int girl) {
         lastGirl = girl;
-        daysWith.computeIfAbsent(girl, g -> new HashSet<>()).add(s.day);
+        if (girl >= 0 && girl < s.daysWith.length) {
+            s.daysWith[girl] |= 1 << Math.min(30, Math.max(0, s.day));
+            s.markDirty();
+        }
         if (girl != warned || s.livingVictim >= 0) return;
         warned = -1;
+        // She can be named in the warning like anyone else; naming herself just has no effect.
+        if (s.mystery().isYandere(girl)) return;
         s.livingVictim = girl;
         s.markDirty();
         Shadow.saw(s, "You went back to " + Roster.get(girl).firstName() + " after she'd asked you not to.");
@@ -70,9 +69,8 @@ final class Whispers {
     /** The girl you keep going back to, if there is one she hasn't mentioned yet. */
     private static int tooClose(RunState s) {
         if (s.devoted || s.day < WARNS_FROM || warned >= 0) return -1;
-        for (Map.Entry<Integer, Set<Integer>> e : daysWith.entrySet()) {
-            int g = e.getKey();
-            if (e.getValue().size() >= CLOSE_DAYS && !warnedAbout.contains(g) && !s.dead.contains(g) && g != s.dating) return g;
+        for (int g = 0; g < s.daysWith.length; g++) {
+            if (Integer.bitCount(s.daysWith[g]) >= CLOSE_DAYS && !s.warnedAbout.contains(g) && !s.dead.contains(g) && g != s.dating) return g;
         }
         return -1;
     }
@@ -102,8 +100,8 @@ final class Whispers {
         foundClue = true;
     }
 
-    static void hurt() {
-        wasHurt = true;
+    static void hurt(String what) {
+        hurtBy = what;
     }
 
     static void wrongGuess(int girl) {
@@ -125,11 +123,12 @@ final class Whispers {
     private static String compose(RunState s) {
         if (s.day < FIRST_DAY || s.party.size() > 1 && RANDOM.nextBoolean()) return null;
         if (wrongGuess >= 0) return "You told them it was " + Roster.get(wrongGuess).firstName() + ". I forgive you. I'm the only one who ever will.";
-        if (wasHurt) return "I saw the car. I couldn't breathe until I knew. Please look where you're going. You're not only yours.";
+        if (hurtBy != null) return "I saw the " + hurtBy + ". I couldn't breathe until I knew. Please look where you're going. You're not only yours.";
         int close = tooClose(s);
         if (close >= 0) {
             warned = close;
-            warnedAbout.add(close);
+            s.warnedAbout.add(close);
+            s.markDirty();
             return "You keep going back to " + Roster.get(close).firstName() + ". Please stop. I won't ask again.";
         }
         List<String> open = new ArrayList<>();
@@ -149,7 +148,8 @@ final class Whispers {
         if (!open.isEmpty() && RANDOM.nextFloat() < NOTE_CHANCE) return open.get(RANDOM.nextInt(open.size()));
         if (RANDOM.nextFloat() > NOTE_CHANCE) return null;
         if (RANDOM.nextBoolean()) return Habits.note(s);
-        List<String> week = ANY_DAY.get(Math.min(3, (s.day - 1) / 7));
+        // Fourteen days, four moods: spread them over the fortnight.
+        List<String> week = ANY_DAY.get(Math.min(3, (s.day - 1) * 4 / Schedule.DAYS));
         return week.get(RANDOM.nextInt(week.size()));
     }
 

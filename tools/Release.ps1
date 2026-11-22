@@ -31,9 +31,16 @@ if ((& $git branch --show-current) -ne 'main') { Stop-With 'you are not on main'
 foreach ($f in 'tools\KokuhakuLauncher.cs', 'tools\mac\KokuhakuMac.java') {
     if (-not (Select-String $f -Pattern "VERSION = `"$([regex]::Escape($Version))`"|Version = `"$([regex]::Escape($Version))`"" -Quiet)) { Stop-With "$f doesn't say $Version. Change its launcher version first." }
 }
+# The mod's jar and fabric.mod.json carry its version, so that has to match too.
+if (-not (Select-String 'gradle.properties' -Pattern "^mod_version=$([regex]::Escape($Version))$" -Quiet)) { Stop-With "gradle.properties doesn't say mod_version=$Version. Change it, and Net.PROTOCOL if any packet changed." }
 $changelog = [IO.File]::ReadAllText((Resolve-Path 'CHANGELOG.md').Path, $utf8).Replace("`r`n", "`n")
-$m = [regex]::Match($changelog, "(?ms)^## $([regex]::Escape($Version)) [^\n]*\n(.*?)(?=^## |\z)")
+$m = [regex]::Match($changelog, "(?ms)^## $([regex]::Escape($Version)) ([^\n]*)\n(.*?)(?=^## |\z)")
 if (-not $m.Success) { Stop-With "CHANGELOG.md has no '## $Version' entry" }
+# The heading says when it came out, like "1.4.3 - 7 November 2026"; today if it can't be read.
+$released = Get-Date
+$heading = $m.Groups[1].Value.Trim() -replace '^\W+\s*', ''
+$parsed = [datetime]::MinValue
+if ([datetime]::TryParseExact($heading, 'd MMMM yyyy', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$parsed)) { $released = $parsed }
 & $git fetch -q origin
 if (& $git ls-remote --tags origin "v$Version") { Stop-With "v$Version is already on GitHub" }
 & $git merge-base --is-ancestor origin/main main
@@ -56,13 +63,16 @@ if (-not $built) {
     Copy-Item 'dist\For friends\Kokuhaku-Mac.tar.gz' (Join-Path $out 'Kokuhaku-Mac.tar.gz') -Force
     Copy-Item (Join-Path $env:TEMP 'kk\mac-build\launcher.jar') (Join-Path $out 'launcher.jar') -Force
     Copy-Item (Join-Path $env:TEMP 'kk\game.zip') (Join-Path $out 'game.zip') -Force
-    $inside = [Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes((Join-Path $out 'Kokuhaku-Windows.exe')))
-    if (-not $inside.Contains($Version)) { Stop-With "the Windows launcher that came out doesn't say $Version" }
+    # The version is a UTF-16 string in the exe, and may start on an odd byte, so look at both alignments.
+    $bytes = [IO.File]::ReadAllBytes((Join-Path $out 'Kokuhaku-Windows.exe'))
+    $even = [Text.Encoding]::Unicode.GetString($bytes)
+    $odd = [Text.Encoding]::Unicode.GetString($bytes, 1, $bytes.Length - 1)
+    if (-not ($even.Contains($Version) -or $odd.Contains($Version))) { Stop-With "the Windows launcher that came out doesn't say $Version" }
     [IO.File]::WriteAllText($stamp, $commit, $utf8)
 }
 
 # ---- Notes, from the changelog ----
-$notes = "<!-- date: $((Get-Date).ToString('yyyy-MM-dd')) -->`n" + $m.Groups[1].Value.Trim() + "`n`n" + @'
+$notes = "<!-- date: $($released.ToString('yyyy-MM-dd')) -->`n" + $m.Groups[2].Value.Trim() + "`n`n" + @'
 ## Download
 - **Windows:** `Kokuhaku-Windows.exe`
 - **Mac:** `Kokuhaku-Mac.tar.gz`. Double-click to unpack, then right-click the app and choose **Open**.

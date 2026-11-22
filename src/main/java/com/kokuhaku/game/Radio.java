@@ -119,7 +119,8 @@ final class Radio {
             send(p, false, 0);
             return;
         }
-        if (action == -2) {
+        // Only there to find once it has been.
+        if (action == -2 && Story.runs() >= Story.CARD_FROM) {
             String card = Story.card();
             if (!s.notes.contains(card)) s.notes.add(card);
             s.markDirty();

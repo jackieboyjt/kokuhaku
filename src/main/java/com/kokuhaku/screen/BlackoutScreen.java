@@ -1,5 +1,6 @@
 package com.kokuhaku.screen;
 
+import com.kokuhaku.client.MenuScene;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
@@ -30,7 +31,10 @@ public class BlackoutScreen extends Screen {
             whenBlack = null;
             then.run();
         }
-        if (since > GIVE_UP_MS) close();
+        if (since <= GIVE_UP_MS) return;
+        // Still in the menu: the run never started, so it's back to the title, not to nothing.
+        if (MenuScene.isActive() && client != null) client.setScreen(new KokuhakuTitleScreen());
+        else close();
     }
 
     @Override
