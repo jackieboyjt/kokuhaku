@@ -39,6 +39,10 @@ public final class Crossings {
     private static final double LOOKS_FOR = 18, STOPS_SHORT = 3.5, PAST_AMBER = 6;
     /** How close to the kerb counts as waiting. */
     private static final double AT_THE_KERB = 3.2, STRIPES = 1;
+    /** Who counts as still on the crossing: standing on the stripes themselves, not waiting by them. */
+    private static final double ON_THEM = 0.3;
+    /** However long someone dawdles out there, the cars get their turn back in the end. */
+    private static final int CLEAR_AT_MOST = 400;
     private static final int POLE = 22, HEAD = 25, GLOW = 11;
 
     private static final class Crossing {
@@ -179,7 +183,7 @@ public final class Crossings {
                     if (c.timer >= WALK_TICKS) next(c, Phase.CLEAR);
                 }
                 case CLEAR -> {
-                    if (c.timer >= CLEAR_TICKS && !anyoneOn(c)) next(c, Phase.CARS);
+                    if (c.timer >= CLEAR_TICKS && (!anyoneOn(c) || c.timer >= CLEAR_AT_MOST)) next(c, Phase.CARS);
                 }
             }
             if (c.waiting > 0) c.waiting--;
@@ -228,7 +232,9 @@ public final class Crossings {
 
     private static boolean anyoneOn(Crossing c) {
         Box box = new Box(c.x1 - STRIPES, 21, c.z1 - STRIPES, c.x2 + 1 + STRIPES, 24, c.z2 + 1 + STRIPES);
-        return !world.getEntitiesByClass(StudentEntity.class, box, e -> !e.hasVehicle()).isEmpty() || !world.getPlayers(p -> box.contains(p.getPos())).isEmpty();
+        // Only someone actually on the stripes: anyone waiting at the kerb would otherwise hold the lights for ever.
+        return !world.getEntitiesByClass(StudentEntity.class, box, e -> !e.hasVehicle() && c.on(e.getX(), e.getZ(), ON_THEM)).isEmpty()
+                || !world.getPlayers(p -> box.contains(p.getPos()) && c.on(p.getX(), p.getZ(), ON_THEM)).isEmpty();
     }
 
     /**
@@ -265,6 +271,17 @@ public final class Crossings {
             return true;
         }
         return false;
+    }
+
+    /** Developer testing only: every crossing, its light, how long, and who is on it. */
+    static String detail() {
+        StringBuilder b = new StringBuilder();
+        for (Crossing c : crossings) {
+            Box box = new Box(c.x1 - STRIPES, 21, c.z1 - STRIPES, c.x2 + 1 + STRIPES, 24, c.z2 + 1 + STRIPES);
+            b.append(" | ").append(c.x1).append(",").append(c.z1).append("..").append(c.x2).append(",").append(c.z2).append(" ").append(c.phase).append(" t").append(c.timer).append(" wait").append(c.waiting);
+            for (StudentEntity e : world.getEntitiesByClass(StudentEntity.class, box, e -> !e.hasVehicle())) b.append(" [").append(e.getName().getString()).append(" skin ").append(e.getSkin()).append(" ai ").append(!e.isAiDisabled()).append(" ").append(e.getBlockPos().toShortString()).append(" ").append(e.routeKey()).append("]");
+        }
+        return b.toString();
     }
 
     /** Developer testing only: what every light says. */

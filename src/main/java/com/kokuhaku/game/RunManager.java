@@ -1324,7 +1324,26 @@ public final class RunManager {
             if (dipped > 0) Kokuhaku.LOG.info("Below street level: {} of {} at {}", dipped, onFoot.size(), onFoot.stream().filter(e -> e.getY() < 21.9 && e.getY() > 20).map(e -> e.getBlockX() + "," + (float) e.getY() + "," + e.getBlockZ() + " on " + overworld.getBlockState(e.getBlockPos()).getBlock()).limit(4).toList());
             long onRoad = onFoot.stream().filter(e -> Town.isRoad(overworld, e.getBlockX(), e.getBlockZ(), Town.WIDE_TURN)).count();
             if (onRoad > 0) Kokuhaku.LOG.info("On the road outside a crossing: {} of {} at {}", onRoad, onFoot.size(), onFoot.stream().filter(e -> Town.isRoad(overworld, e.getBlockX(), e.getBlockZ(), Town.WIDE_TURN)).map(e -> e.getBlockX() + "," + e.getBlockZ()).limit(6).toList());
+            if (System.getenv("KOKUHAKU_STUCKLOG") != null) {
+                Kokuhaku.LOG.info("CROSSINGS{}", Crossings.detail());
+                for (StudentEntity e : onFoot) if (Town.isRoad(overworld, e.getBlockX(), e.getBlockZ(), Town.WIDE_TURN)) Kokuhaku.LOG.info("ROAD {} skin {} folk {} ai {} route {} left {} at {} on {}", e.getName().getString(), e.getSkin(), Townsfolk.isOne(e), !e.isAiDisabled(), e.routeKey(), e.waypointsLeft(), e.getBlockPos().toShortString(), overworld.getBlockState(e.getBlockPos().down()).getBlock());
+                for (StudentEntity e : all) if (e.hasRoute()) Kokuhaku.LOG.info("WAY {} skin {} route {} left {} at {} next {} under {} around {}", e.getName().getString(), e.getSkin(), e.routeKey(), e.waypointsLeft(), e.getBlockPos().toShortString(), e.waypoint(), overworld.getBlockState(e.getBlockPos().down()).getBlock(), devAround(overworld, e.getBlockPos()));
+            }
         }
+    }
+
+    /** Developer testing only: what's round someone's feet, a row at a time: . air, ~ passable, D door, # solid. */
+    private static String devAround(ServerWorld w, BlockPos at) {
+        StringBuilder b = new StringBuilder();
+        for (int dz = -3; dz <= 3; dz++) {
+            for (int dx = -3; dx <= 3; dx++) {
+                BlockPos q = at.add(dx, 0, dz);
+                var st = w.getBlockState(q);
+                b.append(dx == 0 && dz == 0 ? '@' : st.getBlock() instanceof net.minecraft.block.DoorBlock ? 'D' : st.isAir() ? '.' : st.getCollisionShape(w, q).isEmpty() ? '~' : '#');
+            }
+            b.append('/');
+        }
+        return b.toString();
     }
 
     private static boolean isHome(ServerPlayerEntity player, RunState s) {

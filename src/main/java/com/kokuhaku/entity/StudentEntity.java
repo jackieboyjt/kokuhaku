@@ -459,6 +459,11 @@ public class StudentEntity extends PathAwareEntity {
 
     // ---------------------------------------------------------------- route
 
+    /** Developer testing only: where they think they are going. */
+    public String routeKey() {
+        return routeKey;
+    }
+
     public boolean isHeadingTo(String key) {
         return key.equals(routeKey);
     }

@@ -3,6 +3,13 @@
 Kokuhaku runs on Minecraft 1.20.1 (Fabric), launched through Prism Launcher.
 Versions before 1.3.0 weren't tagged at the time; their entries were written up afterwards.
 
+## 1.5.1 — 23 November 2026
+
+### Fixed
+- Some classmates never turned up to school. Twenty-one homes put the family somewhere with no headroom, so they were pushed up onto the roof and stayed there all day. They start indoors now.
+- Anyone who got stuck on the way somewhere, on a table at home or behind something in the street, kept trying the same way for ever. Now, if nobody can see them, they get there in the end, as people do; if you're watching, they step back and try another way.
+- A crossing could stay on red for good if someone stood close to the stripes, and everyone waiting there waited all day. Only people actually on the crossing hold the lights now, and never for long.
+
 ## 1.5.0 — 22 November 2026
 
 ### New

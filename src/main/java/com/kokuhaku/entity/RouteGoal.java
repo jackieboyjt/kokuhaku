@@ -38,6 +38,17 @@ public class RouteGoal extends Goal {
     /** The route's points are half a block apart. */
     private static final int LOOKS_AHEAD = 3, STOPS_ONE_IN = 260, ASK_EVERY = 30, BLOCKED_TICKS = 25, FEEL_TICKS = 50, BLOCKED_BEFORE_REPLAN = 2;
     private int feelingWay = 0, blockedInARow = 0;
+    /**
+     * However they're trying, if nothing along the way has been ticked off for this long
+     * they're stuck for good: on a table at home, or behind something new in the street.
+     * Feeling a way round and laying the route again can go on for ever, so this is the end of it.
+     */
+    private static final int HOPELESS_TICKS = 600, HOP_AHEAD = 12;
+    private int progressAt = 0;
+    private double nearest = Double.MAX_VALUE;
+    private String heading = "";
+    /** Getting this much closer to where they're going counts as getting somewhere. */
+    private static final double CLOSER_BY = 2.0;
     private final java.util.List<BlockPos> opened = new java.util.ArrayList<>();
 
     /** How many times anyone had to give up on a route because they were stuck (logged for tuning). */
@@ -69,8 +80,60 @@ public class RouteGoal extends Goal {
     }
 
     @Override
+    public void start() {
+        nearest = Double.MAX_VALUE;
+        progressAt = mob.age;
+    }
+
+    @Override
     public void stop() {
         mob.getNavigation().stop();
+    }
+
+    /** Someone near enough who can actually see them: a wall between you and them doesn't count. */
+    private boolean watched() {
+        for (var p : mob.getWorld().getPlayers()) {
+            if (!p.isSpectator() && p.squaredDistanceTo(mob) < SEEN_FROM * SEEN_FROM && p.canSee(mob)) return true;
+        }
+        return false;
+    }
+
+    /** Waiting on purpose (a pause, the lights, being held) isn't being stuck. */
+    private void waited() {
+        progressAt = mob.age;
+    }
+
+    /**
+     * Whether they've been getting nowhere for too long, and if so, gets them out of it: with
+     * nobody about, a little further along the way, as people just turn up; with someone
+     * watching, a step to one side, to try again from there.
+     */
+    private boolean hopeless() {
+        // Closer to the end of the walk than they've been, or off somewhere new, is progress. Laying the same walk out again isn't.
+        double away = mob.getPos().distanceTo(mob.waypointAhead(1_000_000));
+        if (away < nearest - CLOSER_BY || !heading.equals(mob.routeKey())) {
+            heading = mob.routeKey();
+            nearest = away;
+            progressAt = mob.age;
+            return false;
+        }
+        if (mob.age - progressAt < HOPELESS_TICKS) return false;
+        progressAt = mob.age;
+        stuckHops++;
+        anchor = null;
+        timesStuck = stuckInARow = blockedInARow = 0;
+        feelingWay = 0;
+        mob.getNavigation().stop();
+        if (!watched()) {
+            Vec3d to = mob.waypointAhead(HOP_AHEAD);
+            mob.refreshPositionAndAngles(to.x, to.y, to.z, mob.getYaw(), 0f);
+            for (int i = 0; i < HOP_AHEAD && mob.hasRoute(); i++) mob.advanceRoute();
+            if (mob.hasRoute()) nearest = mob.getPos().distanceTo(mob.waypointAhead(1_000_000));
+        } else {
+            mob.stepAside(mob.waypoint());
+            com.kokuhaku.game.Paths.ask(mob);
+        }
+        return true;
     }
 
     @Override
@@ -142,17 +205,20 @@ public class RouteGoal extends Goal {
     @Override
     public void tick() {
         if (mob.isCatchingUp()) {
+            waited();
             if (mob.age % 20 == 0) mob.tickCatchUp(speed() + 0.25);
             return;
         }
         if (pause > 0) {
             if (--pause == 0) anchor = null;
             lastProgress = mob.age;
+            waited();
             return;
         }
         if (mob.isHeld()) {
             mob.getNavigation().stop();
             lastProgress = mob.age;
+            waited();
             return;
         }
         Vec3d target = mob.waypoint();
@@ -167,12 +233,14 @@ public class RouteGoal extends Goal {
             anchor = null;
             return;
         }
+        if (hopeless()) return;
         closeDoors(pos);
         // Something's going on round there. They don't know what. They just find a reason not to go that way.
         Vec3d out = StudentEntity.keepOut();
         if (out != null && target.squaredDistanceTo(out) < KEEP_OUT_REACH * KEEP_OUT_REACH && target.squaredDistanceTo(out) < pos.squaredDistanceTo(out)) {
             mob.getNavigation().stop();
             lastProgress = mob.age;
+            waited();
             return;
         }
         if (mob.onLaidRoute() && mob.age >= feelingWay) {

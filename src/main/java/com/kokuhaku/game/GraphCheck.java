@@ -5,6 +5,7 @@ import com.kokuhaku.entity.StudentEntity;
 import com.kokuhaku.world.town.Graph;
 import com.kokuhaku.world.town.Town;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
@@ -82,5 +83,35 @@ final class GraphCheck {
             if (kept++ < 12) Kokuhaku.LOG.info("Link kept, nothing else reaches it: {} to {}", graph.pos(link[0]).toShortString(), graph.pos(link[1]).toShortString());
         }
         Kokuhaku.LOG.info("Graph check: {} points on top of things retired, {} links, {} cut as unwalkable, {} rejoined properly, {} kept as they were, {} ms", retired, links, cut.size() - kept, rejoined, kept, System.currentTimeMillis() - started);
+        Kokuhaku.LOG.info("Homes whose spot indoors had no room to stand: {}", roomToStand(world, town));
+    }
+
+    /** Most spots a home's kept for its family are near the bed. Some were under a low ceiling, so whoever lived there was pushed up onto the roof. */
+    private static final int HOME_REACH = 8;
+
+    /** Moves each home's indoor spot to the nearest one with room to stand, in the same room if it can. How many it moved. */
+    private static int roomToStand(ServerWorld world, Town town) {
+        Graph graph = town.graph;
+        int moved = 0;
+        for (int i = 0; i < town.homes.size(); i++) {
+            Town.Home h = town.homes.get(i);
+            if (h.inside() < 0 || h.inside() >= graph.size()) continue;
+            BlockPos at = graph.pos(h.inside());
+            if (RunManager.standable(world, at) && !graph.neighbours(h.inside()).isEmpty()) continue;
+            int best = -1;
+            double closest = Double.MAX_VALUE;
+            for (int n = 0; n < graph.size(); n++) {
+                BlockPos p = graph.pos(n);
+                if (graph.neighbours(n).isEmpty() || Math.abs(p.getY() - at.getY()) > 2) continue;
+                double gap = p.getSquaredDistance(at) - (h.containsBlock(p) ? HOME_REACH * HOME_REACH : 0);
+                if (p.getSquaredDistance(at) > HOME_REACH * HOME_REACH * 4 || gap >= closest || !RunManager.standable(world, p)) continue;
+                closest = gap;
+                best = n;
+            }
+            if (best < 0) continue;
+            town.homes.set(i, new Town.Home(h.index(), h.district(), best, h.bedHead(), h.bedFoot(), h.a(), h.b()));
+            moved++;
+        }
+        return moved;
     }
 }
