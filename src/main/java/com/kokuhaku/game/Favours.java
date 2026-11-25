@@ -41,15 +41,27 @@ final class Favours {
         at = null;
     }
 
+    /** She's dead, or found out: there's nobody to take it back to, and the favour's off. */
+    private static void dropIfGone(RunState s) {
+        if (asker >= 0 && (s.dead.contains(asker) || s.caught.contains(asker))) clear();
+    }
+
     static boolean canAsk(RunState s, Student who) {
+        dropIfGone(s);
         return asker < 0 && s.day >= FIRST_DAY && !s.favoured.contains(who.id()) && !Living.active(s);
     }
 
     /** Where to go next, for the arrow. */
     static BlockPos target(RunState s, ServerWorld world) {
+        dropIfGone(s);
         if (asker < 0) return null;
         if (!found) return at;
         return world.getEntitiesByType(Kokuhaku.STUDENT, e -> e.getSkin() == asker).stream().findFirst().map(StudentEntity::getBlockPos).orElse(null);
+    }
+
+    static String objective(RunState s) {
+        dropIfGone(s);
+        return objective();
     }
 
     static String objective() {

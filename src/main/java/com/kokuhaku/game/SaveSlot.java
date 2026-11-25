@@ -95,6 +95,12 @@ public final class SaveSlot {
             if (names.length() > 0) names.append(", ");
             names.append(p.getGameProfile().getName());
         }
+        // Anyone in the party who isn't here keeps the bag they had last time.
+        NbtCompound kept = RunManager.savedBags();
+        for (UUID id : s.party) {
+            String key = id.toString();
+            if (!bags.contains(key) && kept.contains(key)) bags.put(key, kept.get(key).copy());
+        }
         save.put("Bags", bags);
         // Older saves have neither: the phone starts empty and the plan from nothing.
         save.put("Phone", Phone.write(s));

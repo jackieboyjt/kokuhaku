@@ -7,6 +7,7 @@ import net.minecraft.entity.ai.goal.Goal;
 import net.minecraft.entity.ai.pathing.Path;
 import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.EnumSet;
@@ -88,6 +89,16 @@ public class RouteGoal extends Goal {
     @Override
     public void stop() {
         mob.getNavigation().stop();
+        // The route's over, so nothing would close what they opened on the way. Shut it behind them,
+        // unless they're still standing in it.
+        Box body = mob.getBoundingBox();
+        for (BlockPos at : opened) {
+            if (body.intersects(new Box(at))) continue;
+            BlockState state = mob.getWorld().getBlockState(at);
+            if (state.getBlock() instanceof DoorBlock door) door.setOpen(mob, mob.getWorld(), state, at, false);
+            else if (state.getBlock() instanceof FenceGateBlock) mob.getWorld().setBlockState(at, state.with(FenceGateBlock.OPEN, false));
+        }
+        opened.clear();
     }
 
     /** Someone near enough who can actually see them: a wall between you and them doesn't count. */
@@ -231,6 +242,8 @@ public class RouteGoal extends Goal {
             mob.setVelocity(0, mob.getVelocity().y, 0);
             lastProgress = mob.age;
             anchor = null;
+            // Waiting for the lights isn't being stuck: a long red mustn't send them hopping across when it changes.
+            waited();
             return;
         }
         if (hopeless()) return;

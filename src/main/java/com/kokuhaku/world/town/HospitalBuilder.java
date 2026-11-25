@@ -294,17 +294,21 @@ final class HospitalBuilder {
         box(-600, 22, MIDDLE - 2, -600, 26, MIDDLE + 2, AIR);
     }
 
-    /** One straight flight per storey at the end of the corridor, with a lane to walk back along. */
+    /**
+     * One straight flight per storey at the end of the corridor, with a lane to walk back along.
+     * The flights take turns either side of the lane: stacked in one place, the one above would
+     * fill the headroom of the one below.
+     */
     private void stairs() {
         int low = NORTH + 13, high = low + 5;
         for (int f = 0; f < FLOORS.length - 1; f++) {
-            int y = FLOORS[f] + 1;
-            box(-575, FLOORS[f + 1], low, -574, FLOORS[f + 1], high, AIR);
+            int y = FLOORS[f] + 1, west = f % 2 == 0 ? -575 : -572, east = west + 1;
+            box(west, FLOORS[f + 1], low, east, FLOORS[f + 1], high, AIR);
             for (int i = 0; i < 6; i++) {
-                box(-575, y + i, high - i, -574, y + i, high - i, stair(Blocks.BIRCH_STAIRS, Direction.NORTH));
-                if (i > 0) box(-575, y, high - i, -574, y + i - 1, high - i, PLASTER);
+                box(west, y + i, high - i, east, y + i, high - i, stair(Blocks.BIRCH_STAIRS, Direction.NORTH));
+                if (i > 0) box(west, y, high - i, east, y + i - 1, high - i, PLASTER);
             }
-            box(-575, y + 6, low - 1, -574, y + 6, low - 1, BIRCH);
+            box(west, y + 6, low - 1, east, y + 6, low - 1, BIRCH);
         }
         for (int floor : FLOORS) {
             box(-573, floor + 1, MIDDLE - 3, -572, floor + 3, MIDDLE - 3, AIR);

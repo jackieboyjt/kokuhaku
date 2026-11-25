@@ -308,6 +308,9 @@ final class LunchScene {
     }
 
     private static void served(Scene c, RunState s, Meal meal) {
+        // Someone else in the party may have spent it while this one was choosing.
+        boolean shortOf = meal != null && meal.price() > s.yen;
+        if (shortOf) meal = null;
         c.meal = meal;
         ServerPlayerEntity p = c.player;
         if (meal != null) {
@@ -317,7 +320,7 @@ final class LunchScene {
             s.markDirty();
         }
         if (meal == null) Body.eat(p, s, 0, 300);
-        String reply = meal == null ? "Water. And they wonder why you're all so pale. Here." : meal.reply();
+        String reply = shortOf ? "You haven't got enough for that now, love. Water, then." : meal == null ? "Water. And they wonder why you're all so pale. Here." : meal.reply();
         StudentEntity cook = LunchHall.cook();
         p.getServerWorld().playSound(null, BlockPos.ofFloored(COUNTER_X, FLOOR, COUNTER_Z), SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.PLAYERS, 0.5f, 1.3f);
         c.waited = 0;

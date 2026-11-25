@@ -40,9 +40,11 @@ final class Blackout {
             p.playSound(SoundEvents.BLOCK_BEACON_DEACTIVATE, SoundCategory.MASTER, 1f, 0.6f);
             Radio.silence(p);
             if (RunManager.isHomeNow(p, s)) hide(p, s);
+            else if (Ward.isAdmitted(p)) RunManager.tell(p, "The power's gone.", "The ward lights die. Somewhere down the hall, a generator coughs and catches.");
             else {
                 RunManager.tell(p, "The power's gone.", "Every light in town, all at once. Get home.");
-                outside.add(p);
+                // Not the one she promised to leave alone, and not someone already in the middle of something.
+                if (!Accomplice.is(p) && !RunManager.inScene(p)) outside.add(p);
             }
         }
         // There's only one of her. She picks one of you, and if there's no way to

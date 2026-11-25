@@ -49,7 +49,25 @@ public final class Story {
 
     /** It turns up in your pocket after school, and it's never there when you check before. */
     static void minute(ServerPlayerEntity p, RunState s) {
-        if (s.minute != Schedule.AFTER_SCHOOL + 5 || s.devoted || Living.active(s) || Kept.on(s)) return;
+        if (s.minute != Schedule.AFTER_SCHOOL + 5) return;
+        pocketNote(p, s);
+    }
+
+    /**
+     * Hours that went by in one go (a hospital bed, or two hours you don't remember) still leave
+     * the note in your pocket: you find it once you're back on your feet.
+     */
+    static void missed(ServerPlayerEntity p, RunState s, int from, int to, int afterTicks) {
+        if (from >= Schedule.AFTER_SCHOOL + 5 || to < Schedule.AFTER_SCHOOL + 5) return;
+        int day = s.day;
+        RunManager.later(afterTicks, () -> {
+            if (p.isRemoved() || s.day != day || s.status != RunState.Status.PLAYING) return;
+            pocketNote(p, s);
+        });
+    }
+
+    private static void pocketNote(ServerPlayerEntity p, RunState s) {
+        if (s.devoted || Living.active(s) || Kept.on(s)) return;
         for (int i = 0; i < NOTE_DAYS.length; i++) {
             if (NOTE_DAYS[i] != s.day) continue;
             String text = note(i);

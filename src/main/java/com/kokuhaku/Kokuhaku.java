@@ -99,7 +99,7 @@ public class Kokuhaku implements ModInitializer {
             server.execute(() -> com.kokuhaku.game.Phone.open(player, refresh));
         });
         ServerPlayNetworking.registerGlobalReceiver(Net.GHOST_SAY, (server, player, handler, buf, sender) -> {
-            int count = Math.min(buf.readVarInt(), com.kokuhaku.game.Phone.GHOST_MOST + 1);
+            int count = Math.max(0, Math.min(buf.readVarInt(), com.kokuhaku.game.Phone.GHOST_MOST + 1));
             int[] words = new int[count];
             for (int i = 0; i < count; i++) words[i] = buf.readVarInt();
             server.execute(() -> com.kokuhaku.game.Phone.ghostSays(player, words));

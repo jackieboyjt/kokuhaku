@@ -480,6 +480,11 @@ public final class RunManager {
         }
     }
 
+    /** The bags from the last save, kept up to date for anyone who's left since: theirs go back into the next one. */
+    static NbtCompound savedBags() {
+        return savedBags;
+    }
+
     private static void restoreBag(ServerPlayerEntity p) {
         String id = p.getUuid().toString();
         if (savedBags.contains(id)) {
@@ -528,7 +533,7 @@ public final class RunManager {
             if (Accomplice.is(player)) Accomplice.pick(player);
             if (toWake.remove(player.getUuid())) {
                 restoreBag(player);
-                later(30, () -> wakeUp(player, s));
+                later(30, () -> joinWake(player, s));
                 return;
             }
             if (toGhost.remove(player.getUuid())) {
@@ -553,10 +558,13 @@ public final class RunManager {
         // Off the train or the mountain first, so they're saved standing somewhere and not busy.
         TrainRide.leave(player);
         SkiSlope.leave(player);
+        // What they had on them goes in the next save, even though they won't be here for it.
+        if (s.party.contains(player.getUuid())) savedBags.put(player.getUuid().toString(), player.getInventory().writeNbt(new net.minecraft.nbt.NbtList()));
         lessonPending.remove(player.getUuid());
         lessonSettled.remove(player.getUuid());
         asleep.remove(player.getUuid());
-        finishLesson(server, s);
+        // They're still on the player list until this returns, so look again once they're off it.
+        later(1, () -> finishLesson(server, s));
         // If they were the last one up, the rest have waited long enough.
         List<ServerPlayerEntity> left = living(server).stream().filter(q -> q != player).toList();
         if (s.status == RunState.Status.PLAYING && !left.isEmpty() && left.stream().allMatch(q -> asleep.contains(q.getUuid()) && isHome(q, s))) goToSleep(server, s);
@@ -2080,6 +2088,11 @@ public final class RunManager {
         // One table each, and one wallet between you.
         if (Schedule.weekday(s.day) == 0 && s.day > 1 && s.day <= Schedule.DAYS && !Kept.on(s) && !Living.active(s)) s.yen += POCKET_MONEY * Math.max(1, living(server).size());
         server.getOverworld().setTimeOfDay(Schedule.worldTime(s.day, s.minute));
+        // Anyone who said yes to a sleepover and then left isn't still at hers when they come back tomorrow.
+        Set<UUID> waking = new HashSet<>();
+        for (ServerPlayerEntity p : living(server)) waking.add(p.getUuid());
+        sleepover.keySet().retainAll(waking);
+        confided.keySet().retainAll(waking);
         for (ServerPlayerEntity p : living(server)) wakeUp(p, s);
     }
 
@@ -2100,8 +2113,26 @@ public final class RunManager {
         wakeUp(p, s, true);
     }
 
-    /** morning is false when she lets you go partway through a day: you wake at home, but the day's already begun. */
+    /**
+     * Back in a run after Continue, once the others are already playing. Not while a night or a scene
+     * has the clock held, or the night could run twice; and only the morning gets a morning.
+     */
+    private static void joinWake(ServerPlayerEntity p, RunState s) {
+        if (p.isRemoved() || s.status != RunState.Status.PLAYING) return;
+        if (transitioning) {
+            later(20, () -> joinWake(p, s));
+            return;
+        }
+        if (s.minute <= Schedule.WAKE + 30) wakeUp(p, s, true);
+        else wakeUp(p, s, false, "You're home. It's " + Schedule.clock(s.minute) + " already.");
+    }
+
     private static void wakeUp(ServerPlayerEntity p, RunState s, boolean morning) {
+        wakeUp(p, s, morning, "You're home. You don't remember getting here.");
+    }
+
+    /** morning is false when she lets you go partway through a day: you wake at home, but the day's already begun. */
+    private static void wakeUp(ServerPlayerEntity p, RunState s, boolean morning, String lateLine) {
         // Developer testing only: straight to the room at the end.
         if ("4".equals(System.getenv("KOKUHAKU_BAT")) && !devRoomSeen) {
             devRoomSeen = true;
@@ -2125,7 +2156,7 @@ public final class RunManager {
             if (!morning) {
                 sleepover.remove(p.getUuid());
                 Ward.discharged(p);
-                announce(p, "", "You're home. You don't remember getting here.", 0);
+                announce(p, "", lateLine, 0);
                 return;
             }
             int left = Schedule.DAYS - s.day;
@@ -2621,10 +2652,16 @@ public final class RunManager {
     }
 
     /** Time passing in a hospital bed, or lost to her. It's the only way you'll ever miss a lesson without trouble. */
-    static void jumpMinutes(MinecraftServer server, RunState s, int minutes) {
+    static void jumpMinutes(ServerPlayerEntity p, RunState s, int minutes, int backOnFeetTicks) {
+        int from = s.minute;
         s.minute += minutes;
         s.markDirty();
-        server.getOverworld().setTimeOfDay(Schedule.worldTime(s.day, s.minute));
+        p.server.getOverworld().setTimeOfDay(Schedule.worldTime(s.day, s.minute));
+        if (minutes <= 0) return;
+        // The clock jumped, so nothing ticked over at the end of school. Detention you weren't there for
+        // doesn't follow you into tomorrow, and the note in your pocket is still there when you're up.
+        if (Schedule.isSchoolDay(s.day) && from < Schedule.AFTER_SCHOOL && s.minute >= Schedule.AFTER_SCHOOL) s.detention = false;
+        Story.missed(p, s, from, s.minute, backOnFeetTicks);
     }
 
     /**
@@ -2656,6 +2693,9 @@ public final class RunManager {
             tell(who, label, Schedule.clock(s.minute) + warn);
         });
     }
+
+    /** How long getting up out of a ward bed takes. */
+    static final int GET_UP_TICKS = WAKE_TICKS;
 
     /** Out of bed, on one good leg, and free to go. */
     static void getUp(ServerPlayerEntity p, RunState s, Town.Home bed) {
@@ -3417,7 +3457,7 @@ public final class RunManager {
         }
         if (Schedule.isSnowDay(s.day) && m < Schedule.AFTER_SCHOOL) return tier(s, "School's shut for the snow. Everyone's out in town: ask around.", "No school. Ask around town.", "Footprints everywhere.", "Somebody's footprints stop at your door.");
         boolean school = Schedule.isSchoolDay(s.day);
-        if (Favours.objective() != null && m >= Schedule.AFTER_SCHOOL) return Favours.objective();
+        if (Favours.objective(s) != null && m >= Schedule.AFTER_SCHOOL) return Favours.objective();
         if (Ward.noteDue(s) && school) return tier(s, "There's an envelope in your shoe locker.", "Check your locker.", "Your locker.", "She wants something.");
         if (!s.found.contains(0) && school) {
             return tier(s, "Find what's waiting in shoe locker " + locker + " at school.", "Check locker " + locker + ".", "Your locker.", "Someone left you something.");
@@ -3456,7 +3496,7 @@ public final class RunManager {
         if (m >= curfew - 150) return isHome(p, s) ? null : town.graph.pos(homeOf(s, p).inside());
         if (Festival.on(s) && m < Festival.CLOSES) return town.graph.pos(town.place(TrainRide.waiting() ? "station" : "field"));
         boolean school = Schedule.isSchoolDay(s.day);
-        if (!Living.active(s) && m >= Schedule.AFTER_SCHOOL && Favours.objective() != null) return Favours.target(s, p.getServerWorld());
+        if (!Living.active(s) && m >= Schedule.AFTER_SCHOOL && Favours.objective(s) != null) return Favours.target(s, p.getServerWorld());
         if (!Living.active(s) && school && (!s.found.contains(0) || Ward.noteDue(s))) return town.graph.pos(town.foyer);
         if (school && m < Schedule.AFTER_SCHOOL) {
             List<String> subjects = Schedule.subjects(s.seed, Schedule.weekday(s.day));

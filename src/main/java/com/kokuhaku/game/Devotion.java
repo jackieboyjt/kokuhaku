@@ -76,6 +76,11 @@ final class Devotion {
         return weekday[r.nextInt(weekday.length)];
     }
 
+    /** A day she's said you're staying in: she doesn't take you anywhere either. */
+    static boolean stayingIn(RunState s) {
+        return rule(s) == Rule.STAY_IN;
+    }
+
     static String ruleWords(RunState s) {
         return rule(s).words;
     }

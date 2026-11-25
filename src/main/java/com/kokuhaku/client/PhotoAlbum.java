@@ -56,6 +56,18 @@ public final class PhotoAlbum {
         frames = 0;
     }
 
+    /**
+     * A scene is starting while the view is still turned round for a photo: put the view and the HUD
+     * back first, so the scene saves the real ones, and take the photo once it's over.
+     */
+    public static void interrupt(MinecraftClient client) {
+        if (!behind) return;
+        client.options.setPerspective(was);
+        client.options.hudHidden = hudWas;
+        behind = false;
+        frames = 0;
+    }
+
     /** Counts the frames drawn from behind. */
     public static void frameDrawn() {
         if (behind) frames++;

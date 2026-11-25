@@ -82,12 +82,13 @@ public final class Voice {
 
     private static void capture(MinecraftClient client) {
         int heard = micChanges;
+        TargetDataLine mic = null;
         try {
             if (TEST_TONE) {
                 tone(client);
                 return;
             }
-            TargetDataLine mic = microphone();
+            mic = microphone();
             mic.open(FORMAT, FRAME * 8);
             mic.start();
             byte[] raw = new byte[FRAME * 2];
@@ -116,7 +117,6 @@ public final class Voice {
                     encoder.reset();
                 }
             }
-            mic.close();
         } catch (LineUnavailableException | IllegalArgumentException e) {
             // No microphone: you can still hear everyone.
             Kokuhaku.LOG.warn("No microphone for voice chat: {}", e.getMessage());
@@ -125,6 +125,8 @@ public final class Voice {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } finally {
+            // Closed however the loop ended, so the microphone isn't left open after a disconnect.
+            if (mic != null) mic.close();
             thread = null;
         }
     }
@@ -164,7 +166,11 @@ public final class Voice {
         if (client.getNetworkHandler() == null) return;
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeByteArray(encoded);
-        ClientPlayNetworking.send(Net.VOICE, buf);
+        try {
+            ClientPlayNetworking.send(Net.VOICE, buf);
+        } catch (IllegalStateException e) {
+            // Disconnected between the check and the send: this frame just goes nowhere.
+        }
     }
 
     /** Someone near enough is talking. Called as packets arrive, not on the game thread. */

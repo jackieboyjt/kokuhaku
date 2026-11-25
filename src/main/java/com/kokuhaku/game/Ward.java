@@ -209,7 +209,7 @@ public final class Ward {
             RunManager.overnight(p, s);
             return;
         }
-        RunManager.jumpMinutes(p.server, s, minutes);
+        RunManager.jumpMinutes(p, s, minutes, LATER_TICKS + RunManager.GET_UP_TICKS + 20);
         Town.Home bed = RunManager.ward(s, p);
         RunManager.sendBlack(p, bed, LATER_TICKS, minutes > 0 ? (minutes / 60) + " hours later" : "");
         RunManager.later(LATER_TICKS, () -> RunManager.getUp(p, s, bed));

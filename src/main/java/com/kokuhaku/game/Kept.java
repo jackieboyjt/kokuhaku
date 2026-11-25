@@ -148,7 +148,8 @@ final class Kept {
             }
         }
         boolean errands = m >= Schedule.AFTER_SCHOOL || !Schedule.isSchoolDay(s.day) && m >= Schedule.WAKE + 150;
-        if (!errands || m >= Schedule.EVENING) return home;
+        // "We're staying in today": she'd only punish you for being out, so she doesn't take you out.
+        if (!errands || m >= Schedule.EVENING || !Schedule.isSchoolDay(s.day) && Devotion.stayingIn(s)) return home;
         if (hospitalDue) return town.place("hospital");
         // The same round, in an order only she knows.
         List<String> round = new ArrayList<>(List.of(ERRANDS));
@@ -260,7 +261,7 @@ final class Kept {
             p.teleport(p.getServerWorld(), in.x, in.y, in.z, p.getYaw(), 0f);
             e.placeAt("beside", in.add(1, 0, 0));
             goal = "";
-            RunManager.jumpMinutes(p.server, s, LOST_HOURS);
+            RunManager.jumpMinutes(p, s, LOST_HOURS, TAKEN_TICKS / 2 + 20);
         });
         RunManager.later(TAKEN_TICKS, () -> RunManager.setBusy(p, false));
     }

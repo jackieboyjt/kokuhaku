@@ -20,7 +20,7 @@ final class Whispers {
     private static final float NOTE_CHANCE = 0.7f;
     private static final Random RANDOM = new Random();
 
-    private static int lastGirl = -1, wrongGuess = -1, flowers = 0, warned = -1;
+    private static int lastGirl = -1, wrongGuess = -1, flowers = 0;
     // Which days you spent time with each girl, and who you've been told to stay away from, are kept with the run.
     private static String drink = null;
     private static boolean worked, absent, doorOpen, doorShut, skippedWalk, foundClue;
@@ -36,7 +36,7 @@ final class Whispers {
     }
 
     static void reset() {
-        lastGirl = wrongGuess = warned = -1;
+        lastGirl = wrongGuess = -1;
         flowers = 0;
         drink = null;
         forget();
@@ -57,8 +57,9 @@ final class Whispers {
             s.daysWith[girl] |= 1 << Math.min(30, Math.max(0, s.day));
             s.markDirty();
         }
-        if (girl != warned || s.livingVictim >= 0) return;
-        warned = -1;
+        if (girl != s.warnedNow || s.livingVictim >= 0) return;
+        s.warnedNow = -1;
+        s.markDirty();
         // She can be named in the warning like anyone else; naming herself just has no effect.
         if (s.mystery().isYandere(girl)) return;
         s.livingVictim = girl;
@@ -68,7 +69,7 @@ final class Whispers {
 
     /** The girl you keep going back to, if there is one she hasn't mentioned yet. */
     private static int tooClose(RunState s) {
-        if (s.devoted || s.day < WARNS_FROM || warned >= 0) return -1;
+        if (s.devoted || s.day < WARNS_FROM || s.warnedNow >= 0) return -1;
         for (int g = 0; g < s.daysWith.length; g++) {
             if (Integer.bitCount(s.daysWith[g]) >= CLOSE_DAYS && !s.warnedAbout.contains(g) && !s.dead.contains(g) && g != s.dating) return g;
         }
@@ -126,7 +127,7 @@ final class Whispers {
         if (hurtBy != null) return "I saw the " + hurtBy + ". I couldn't breathe until I knew. Please look where you're going. You're not only yours.";
         int close = tooClose(s);
         if (close >= 0) {
-            warned = close;
+            s.warnedNow = close;
             s.warnedAbout.add(close);
             s.markDirty();
             return "You keep going back to " + Roster.get(close).firstName() + ". Please stop. I won't ask again.";

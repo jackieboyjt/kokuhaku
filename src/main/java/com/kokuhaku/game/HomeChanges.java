@@ -139,7 +139,7 @@ final class HomeChanges {
         }
         // After the light's gone off, something has always been moved.
         boolean expected = expect.remove(p.getUuid());
-        if (!out.remove(p.getUuid()) || s.day < FROM_DAY || lastDay == s.day || Kept.on(s) || Living.active(s) || !expected && RANDOM.nextInt(ONE_IN) != 0) return;
+        if (!out.remove(p.getUuid()) || s.day < FROM_DAY || !expected && lastDay == s.day || Kept.on(s) || Living.active(s) || !expected && RANDOM.nextInt(ONE_IN) != 0) return;
         lastDay = s.day;
         ServerWorld world = p.getServerWorld();
         List<Runnable> could = new ArrayList<>();

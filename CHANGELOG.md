@@ -3,6 +3,30 @@
 Kokuhaku runs on Minecraft 1.20.1 (Fabric), launched through Prism Launcher.
 Versions before 1.3.0 weren't tagged at the time; their entries were written up afterwards.
 
+## Unreleased
+
+### Fixed
+- The hospital's upper floors couldn't be reached. Both flights of stairs were built in the same place, so the second filled the headroom of the first, and you couldn't climb past the fourth step. The flights now sit either side of the walkway, so the records room on the top floor, and the diary page in it, can be found again.
+- Hours in a hospital bed, or the two hours she takes from you, skipped straight over the end of school. Detention you weren't there for followed you into the next day, and on a note day the note in your coat pocket was lost. Detention is let off now, and the note is in your pocket when you're back on your feet.
+- "Please stop. I won't ask again." was forgotten on Continue, so going back to her was safe after all. It's kept with the run now.
+- On "We're staying in today" weekends with her, she led you out on her errands at nine and then broke your arm for being out. She stays in too now.
+- The blackout could send her after the one she'd promised to leave alone, or after someone lying in a hospital bed, and spend her one chance of the night on them.
+- If the girl who asked you a favour died, the favour stayed on the screen for the rest of the run and nobody else would ask you one. It's dropped now.
+- In a party, two of you could ask a teacher to make up for a mark at once and take two off, or more than you had.
+- In a party, lunch from the counter could put the wallet in debt if someone else spent the money while you were choosing. You get water instead now.
+- A friend in your party who didn't come back on Continue lost everything in their bag at the next morning's save. Their bag is kept now, and anyone who leaves mid-run keeps theirs too.
+- A friend joining after Continue could be woken while a night was going by, and the night could run twice. They wait now, and joining in the afternoon doesn't give them a second morning.
+- A friend who said yes to a sleepover and then left was still "at hers" when they came back, so their own bed wasn't theirs and getting home before curfew didn't count.
+- When the last one still answering in a lesson left, the others had to sit out the rest of it.
+- The bag's days off and days late could change for days already gone when someone died, and a friend's death made people grieve for them on days before it happened.
+- Some stares and secrets were never written in your bag: two of them could share the same note.
+- Students waiting a long time at a red light gave up as if stuck, and hopped sideways or across the road when it changed.
+- Doors students opened on the way somewhere stayed open after they got there.
+- After the bedroom light went off, nothing in the room had moved if something already had that day.
+- A photo taken at the moment a scene started could leave the clock, money and phone hidden for the rest of the run.
+- The mute key did nothing during scenes, walks, grabs and the end.
+- Disconnecting while talking could leave your microphone open.
+
 ## 1.5.1 — 23 November 2026
 
 ### Fixed

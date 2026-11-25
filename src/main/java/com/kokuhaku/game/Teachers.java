@@ -195,6 +195,11 @@ public final class Teachers {
 
     /** An hour's filing, and one mark comes off. */
     private static void makeUp(ServerPlayerEntity p, RunState s, String name) {
+        // In a party two of you can have the menu open at once: only the first one gets the mark off.
+        if (s.strikes <= 0 || s.day - s.madeUpOn < DAYS_BETWEEN_MAKE_UPS) {
+            Talk.say(p, name, "I've already crossed one off for you. Don't push it.", Talk.leave("Sorry."));
+            return;
+        }
         s.madeUpOn = s.day;
         s.strikes--;
         s.markDirty();

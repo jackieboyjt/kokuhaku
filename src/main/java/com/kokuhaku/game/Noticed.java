@@ -51,11 +51,11 @@ final class Noticed {
             String name = Roster.get(id).firstName();
             float glance = CHANCE_INNOCENT_GLANCE * (Secrets.keeper(s, Secrets.Kind.CRUSH) == id ? 8 : 1);
             boolean staring = e.isStaring() || RANDOM.nextFloat() < glance;
-            if (staring && !e.isTalking() && youSee(p, e, SEEN_AT) && seen.add("look" + s.day + id)) {
+            if (staring && !e.isTalking() && youSee(p, e, SEEN_AT) && seen.add("look" + s.day + ":" + id)) {
                 write(p, s, "Day " + s.day + ": you looked up and " + name + " was already looking at you.");
             }
             Secrets.Kind secret = Secrets.kindNow(s, id);
-            if (secret != null && goingThere(s, e, id) && youSee(p, e, SEEN_AT) && seen.add("secret" + s.day + id)) {
+            if (secret != null && goingThere(s, e, id) && youSee(p, e, SEEN_AT) && seen.add("secret" + s.day + ":" + id)) {
                 String what = switch (secret) {
                     case HOSPITAL -> ", going into the hospital. She didn't see you.";
                     case NIGHT_WALKS -> ", on her own " + ("park".equals(Secrets.nightPlace(s, id)) ? "in the park" : "on the beach") + ". It's late for that.";

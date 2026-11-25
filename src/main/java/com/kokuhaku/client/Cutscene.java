@@ -137,6 +137,7 @@ public final class Cutscene {
     public static void start(Type t, Vec3d cam, Vec3d look, Vec3d head, Vec3d foot, int ticks, String news) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (System.getenv("KOKUHAKU_BOT") != null) com.kokuhaku.Kokuhaku.LOG.info("Scene {} starts, {} ms after the last one ended, replacing {}", t, type == null ? System.currentTimeMillis() - lastStopped : 0, type);
+        PhotoAlbum.interrupt(client);
         if (type == null) hudWasHidden = client.options.hudHidden;
         type = t;
         standSpot = cam;

@@ -80,7 +80,7 @@ final class People {
         String name = null;
         int group = Routines.group(who);
         for (int id = 0; id < s.diedOn.length; id++) {
-            if (s.diedOn[id] > 0 && id != who.id() && Routines.group(Roster.get(id)) == group && s.day - s.diedOn[id] <= GRIEF_DAYS) name = Roster.get(id).firstName();
+            if (s.diedOn[id] > 0 && s.diedOn[id] < s.day && id != who.id() && Routines.group(Roster.get(id)) == group && s.day - s.diedOn[id] <= GRIEF_DAYS) name = Roster.get(id).firstName();
         }
         return name;
     }
@@ -116,8 +116,20 @@ final class People {
     private static boolean rolledOff(RunState s, int id) {
         if (id >= Roster.TOTAL || !Schedule.isSchoolDay(s.day) || Festival.on(s) || (s.day == 1 && id == Roster.GIRLS)) return false;
         Random today = new Random(s.seed ^ s.day * 15485863L ^ id * 32452843L);
-        int chance = Math.min(MOST_ABSENT, ABSENT_IN_100 + s.dead.size() * MORE_FOR_EACH_DEATH);
+        int chance = Math.min(MOST_ABSENT, ABSENT_IN_100 + deadBy(s) * MORE_FOR_EACH_DEATH);
         return today.nextInt(100) < (grieving(s, id) ? chance * 8 : chance);
+    }
+
+    /** How many had died before this morning. Deaths come in the night, so a day only counts the nights before it,
+     *  and the bag's counts for past days don't shift when someone dies later. */
+    private static int deadBy(RunState s) {
+        int before = 0, recorded = 0;
+        for (int d : s.diedOn) {
+            if (d > 0) recorded++;
+            if (d > 0 && d < s.day) before++;
+        }
+        // A run saved before death days were kept: fall back to everyone dead so far.
+        return recorded < s.dead.size() ? s.dead.size() : before;
     }
 
     /** School days they've missed so far. Anyone's can climb, hers included. */
