@@ -7,7 +7,7 @@ Versions before 1.3.0 weren't tagged at the time; their entries were written up 
 
 ### Fixed
 - The hospital's upper floors couldn't be reached. Both flights of stairs were built in the same place, so the second filled the headroom of the first, and you couldn't climb past the fourth step. The flights now sit either side of the walkway, so the records room on the top floor, and the diary page in it, can be found again.
-- Hours in a hospital bed, or the two hours she takes from you, skipped straight over the end of school. Detention you weren't there for followed you into the next day, and on a note day the note in your coat pocket was lost. Detention is let off now, and the note is in your pocket when you're back on your feet.
+- Hours in a hospital bed, or the two hours she takes from you, skipped straight over the end of school. Detention you weren't there for followed you into the next day, and on a note day the note in your coat pocket was lost. Detention is let off now, and after a hospital stay the note is in your pocket when you're back on your feet.
 - "Please stop. I won't ask again." was forgotten on Continue, so going back to her was safe after all. It's kept with the run now.
 - On "We're staying in today" weekends with her, she led you out on her errands at nine and then broke your arm for being out. She stays in too now.
 - The blackout could send her after the one she'd promised to leave alone, or after someone lying in a hospital bed, and spend her one chance of the night on them.
@@ -24,7 +24,7 @@ Versions before 1.3.0 weren't tagged at the time; their entries were written up 
 - Doors students opened on the way somewhere stayed open after they got there.
 - After the bedroom light went off, nothing in the room had moved if something already had that day.
 - A photo taken at the moment a scene started could leave the clock, money and phone hidden for the rest of the run.
-- The mute key did nothing during scenes, walks, grabs and the end.
+- The mute key did nothing during scenes, walks, grabs and the jumpscare.
 - Disconnecting while talking could leave your microphone open.
 - The bedroom light could come on twice more after every Continue, and the clearing in the forest could be found again. Both are kept with the run now: twice a run means twice a run.
 - The footsteps behind you in the forest never stopped as long as you kept walking. They give up after a while now, and then it's quiet for a bit.

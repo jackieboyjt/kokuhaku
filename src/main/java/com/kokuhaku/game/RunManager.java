@@ -2118,7 +2118,12 @@ public final class RunManager {
      * has the clock held, or the night could run twice; and only the morning gets a morning.
      */
     private static void joinWake(ServerPlayerEntity p, RunState s) {
-        if (p.isRemoved() || s.status != RunState.Status.PLAYING) return;
+        if (s.status != RunState.Status.PLAYING) return;
+        // Gone again before they were woken: wake them when they're back.
+        if (p.isRemoved()) {
+            toWake.add(p.getUuid());
+            return;
+        }
         if (transitioning) {
             later(20, () -> joinWake(p, s));
             return;
