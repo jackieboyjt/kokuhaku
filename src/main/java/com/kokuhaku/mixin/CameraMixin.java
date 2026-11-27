@@ -4,7 +4,6 @@ import com.kokuhaku.client.Cutscene;
 import net.minecraft.client.render.Camera;
 import net.minecraft.entity.Entity;
 import net.minecraft.world.BlockView;
-import net.minecraft.util.math.MathHelper;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -24,12 +23,6 @@ public abstract class CameraMixin {
     protected abstract void setRotation(float yaw, float pitch);
 
     @Shadow
-    public abstract float getYaw();
-
-    @Shadow
-    public abstract float getPitch();
-
-    @Shadow
     public abstract net.minecraft.util.math.Vec3d getPos();
 
     /** Your own body: a bad leg, an empty stomach, the cold, a fright. Nothing during a scene, which has its own camera. */
@@ -38,9 +31,9 @@ public abstract class CameraMixin {
         if (third || focused == null || com.kokuhaku.client.Cutscene.active()) return;
         net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
         if (focused != client.player) return;
-        float[] turn = com.kokuhaku.client.BodyFeel.turn(client, tickDelta);
+        // Only the height here. The turn and tilt go on the view itself (GameRendererMixin), like the game's own bobbing,
+        // so the camera that culling, sound and aiming go by stays where you're really looking.
         float dip = com.kokuhaku.client.BodyFeel.dip(client, tickDelta);
-        if (turn[0] != 0f || turn[1] != 0f) setRotation(getYaw() + turn[0], MathHelper.clamp(getPitch() + turn[1], -90f, 90f));
         if (dip != 0f) {
             net.minecraft.util.math.Vec3d at = getPos();
             setPos(at.x, at.y - dip, at.z);

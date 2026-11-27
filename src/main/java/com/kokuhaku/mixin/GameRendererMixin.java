@@ -14,7 +14,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class GameRendererMixin {
     @Inject(method = "tiltViewWhenHurt", at = @At("HEAD"))
     private void kokuhaku$cutsceneRoll(MatrixStack matrices, float tickDelta, CallbackInfo ci) {
-        float roll = Cutscene.roll() + com.kokuhaku.client.BodyFeel.roll(net.minecraft.client.MinecraftClient.getInstance(), tickDelta);
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        float roll = Cutscene.roll() + com.kokuhaku.client.BodyFeel.roll(client, tickDelta);
         if (roll != 0f) matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(roll));
+        // Your own body turning the view a little: on the view, before the camera's own turn, so it's always relative to where you look.
+        float[] turn = com.kokuhaku.client.BodyFeel.turn(client, tickDelta);
+        if (turn[1] != 0f) matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(turn[1]));
+        if (turn[0] != 0f) matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(turn[0]));
     }
 }
