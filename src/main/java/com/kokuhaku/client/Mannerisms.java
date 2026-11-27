@@ -32,12 +32,28 @@ final class Mannerisms {
     private static final float CHANGE_RATE = 7f, TURN_RATE = 9f, SHUFFLE_FROM = 45f, SHUFFLE_BELOW = 0.1f, STRIDE_RATE = 0.6662f;
     private static final float RIDING_ARM = 0.6283f;
     private static final float SIT_SECONDS = 1.5f, STAND_SECONDS = 0.6f, STEP_PART = 0.45f, SEAT_HEIGHT = 0.5f, OVER_THE_CHAIR = 0.42f, FURTHEST_STEP = 3.2f, STEP_RATE = 0.8f, STEP_SIZE = 0.42f;
+    /** Startled: how close something has to come and how fast (blocks a tick); for a car, how near, how fast, and how close to hitting them its line runs; then how long it lasts and how long till the next. */
+    private static final double STARTLE_REACH = 2.2, STARTLE_SPEED = 0.26, CAR_REACH = 4, CAR_SPEED = 0.35, CAR_MISS = 1.1;
+    /** Come up behind someone: how close before they notice, how far to go before it can happen again, and what counts as behind (degrees off their face). */
+    private static final double CREPT_REACH = 1.4, CREPT_GONE = 3.5;
+    private static final float UNSEEN_FROM = 110f;
+    private static final long STARTLE_RISE_MS = 90, STARTLE_FADE_MS = 450, STARTLE_REST_MS = 6000, STARTLE_LOOK_MS = 150;
+    /** Afraid or grieving: now and then they look at you, for a moment, from across the room. */
+    private static final int WATCH_SLOT = 220, WATCH_LENGTH = 60;
+    private static final double WATCH_REACH = 12;
+    /** Out in the snow: how quickly the cold comes over them, and the stamping and shivering. */
+    private static final float COLD_RATE = 1.5f;
     private static final int LUNCH_SLOT = 120, HALL_FLOOR = 25, HALL_WEST = -601, HALL_EAST = -585, HALL_NORTH = -120, HALL_SOUTH = -102;
 
     /** Everyone goes from one thing to the next at their own pace, so each of them keeps track of how far they've got. */
     private static final class Easing {
-        float sat, chat, speak, wave, turn, clock, lastTurn, lastMoved;
+        float sat, chat, speak, wave, turn, clock, lastTurn, lastMoved, cold;
         long last, lastFrame;
+        /** When something last made them jump, when they last checked, and which way it came from (degrees). */
+        long startledAt, lookedAt;
+        float startleFrom;
+        /** Who's close to them now, and so has already had their chance to make them jump. */
+        final java.util.Set<java.util.UUID> crept = new java.util.HashSet<>();
         boolean wasSat;
         /** Where they last stood, and where they stepped off from to sit. */
         Vec3d stood, from;
@@ -443,6 +459,12 @@ final class Mannerisms {
         m.rightLeg.pitch += shuffle;
         m.leftLeg.pitch -= shuffle;
         if (s.wave > 0.01f) waving(m, age, s.wave);
+        // In the snow, standing about out under the sky, the cold gets into them.
+        boolean outInSnow = com.kokuhaku.game.Schedule.isSnowDay(ClientRun.day) && e.getY() <= 90 && e.getWorld().isSkyVisible(e.getBlockPos().up(2));
+        s.cold = toward(s.cold, outInSnow ? 1f : 0f, COLD_RATE, seconds);
+        if (s.cold > 0.01f) cold(m, e, clock, age, s.cold * still * (1f - s.chat), s.cold * walk);
+        watching(m, e, clock, sitting);
+        startled(m, e, s, now, sitting);
         // Theirs went when yours did, or they only thought it had: a look, and back in the pocket.
         long[] b = BUZZED.get(e);
         if (b != null) {
@@ -460,6 +482,134 @@ final class Mannerisms {
         m.leftSleeve.copyTransform(m.leftArm);
         m.rightPants.copyTransform(m.rightLeg);
         m.leftPants.copyTransform(m.leftLeg);
+    }
+
+    /**
+     * Cold. Their free hand (the other one has the umbrella) hugged across their front, shoulders up and
+     * chin down, a stamp of the feet now and then, and a shiver. Walking, they just keep their arms in.
+     */
+    private static void cold(PlayerEntityModel<StudentEntity> m, StudentEntity e, float clock, float age, float standing, float walking) {
+        if (standing > 0.001f) {
+            arm(m.leftArm, standing, -1.05f, 0.95f, 0f);
+            m.head.pitch += 0.16f * standing;
+            // A bout of stamping, then standing it out.
+            float stamping = MathHelper.clamp((MathHelper.sin(clock * 0.045f + e.getId()) - 0.55f) * 4f, 0f, 1f) * standing;
+            float stamp = MathHelper.sin(age * 0.7f) * 0.22f * stamping;
+            m.rightLeg.pitch += stamp;
+            m.leftLeg.pitch -= stamp;
+            float shiver = MathHelper.sin(age * 2.6f + e.getId()) * 0.025f * standing;
+            m.leftArm.roll += shiver;
+            m.head.roll += shiver * 0.6f;
+        }
+        if (walking > 0.001f) {
+            m.leftArm.pitch *= 1f - 0.6f * walking;
+            m.leftArm.roll -= 0.08f * walking;
+            m.head.pitch += 0.1f * walking;
+        }
+    }
+
+    /** Your own player, if it's there to be looked at. */
+    private static net.minecraft.entity.player.PlayerEntity you() {
+        MinecraftClient c = MinecraftClient.getInstance();
+        return c.player != null && ClientRun.active && !ClientRun.ghost ? c.player : null;
+    }
+
+    /** How far round to turn the head (radians, from the body) to face a point, as far as a neck goes. */
+    private static float headToward(StudentEntity e, double x, double z) {
+        float yaw = (float) Math.toDegrees(Math.atan2(z - e.getZ(), x - e.getX())) - 90f;
+        return MathHelper.clamp(MathHelper.wrapDegrees(yaw - e.bodyYaw), -75f, 75f) * ((float) Math.PI / 180f);
+    }
+
+    /**
+     * Scared, or grieving, they keep an eye on everyone, and that includes you: a look from across the
+     * room, held a moment too long, and away again. Each of them on their own time.
+     */
+    private static void watching(PlayerEntityModel<StudentEntity> m, StudentEntity e, float clock, boolean sitting) {
+        if (e.getMood() == StudentEntity.AT_EASE || e.isSpeaking() || e.isChatting() || e.isTalking()) return;
+        var p = you();
+        if (p == null || p.squaredDistanceTo(e) > WATCH_REACH * WATCH_REACH) return;
+        long slot = (long) (clock / WATCH_SLOT);
+        float at = clock % WATCH_SLOT;
+        if (mix(slot, e.getId() * 53L) % 4 != 0 || at >= WATCH_LENGTH) return;
+        float w = held(at / WATCH_LENGTH);
+        m.head.yaw = MathHelper.lerp(w, m.head.yaw, headToward(e, p.getX(), p.getZ()));
+        double down = p.getEyeY() - e.getEyeY(), across = Math.sqrt(p.squaredDistanceTo(e.getX(), p.getY(), e.getZ()));
+        m.head.pitch = MathHelper.lerp(w, m.head.pitch, MathHelper.clamp((float) -Math.atan2(down, Math.max(0.5, across)), -0.6f, 0.6f));
+    }
+
+    /**
+     * Someone tears past close enough to touch, or a car comes too near: they jump. Hands up, head back
+     * and round to it, and then it's gone and they feel a bit silly. Not again for a while.
+     */
+    private static void startled(PlayerEntityModel<StudentEntity> m, StudentEntity e, Easing s, long now, boolean sitting) {
+        if (now - s.lookedAt > STARTLE_LOOK_MS) {
+            s.lookedAt = now;
+            boolean steady = Math.abs(e.getX() - e.prevX) + Math.abs(e.getZ() - e.prevZ) < STARTLE_SPEED;
+            if (steady && now - s.startledAt > STARTLE_REST_MS) {
+                for (net.minecraft.entity.Entity o : e.getWorld().getOtherEntities(e, e.getBoundingBox().expand(Math.max(STARTLE_REACH, CAR_REACH)))) {
+                    double dx = o.getX() - o.prevX, dz = o.getZ() - o.prevZ, speed = Math.sqrt(dx * dx + dz * dz);
+                    boolean car = "trepscars".equals(net.minecraft.registry.Registries.ENTITY_TYPE.getId(o.getType()).getNamespace());
+                    double reach = car ? CAR_REACH : STARTLE_REACH;
+                    if (speed < (car ? CAR_SPEED : STARTLE_SPEED) || o.squaredDistanceTo(e) > reach * reach) continue;
+                    if (o instanceof StudentEntity other && other.getPeek() != 0) continue;
+                    // Cars going by in their lane are just traffic. One coming straight at them isn't.
+                    if (car) {
+                        double ox = e.getX() - o.getX(), oz = e.getZ() - o.getZ();
+                        boolean coming = ox * dx + oz * dz > 0;
+                        double miss = Math.abs(dx * oz - dz * ox) / speed;
+                        if (!coming || miss > CAR_MISS) continue;
+                    }
+                    startle(s, e, o, now);
+                    break;
+                }
+            }
+            // Come up right behind someone without them seeing, and they jump when they do. Once, till you've gone away again.
+            // Not anyone sitting down: walking behind chairs is just getting about a classroom.
+            if (!sitting) for (net.minecraft.entity.player.PlayerEntity p : e.getWorld().getPlayers()) {
+                if (p.isSpectator() || p.isInvisible()) continue;
+                double d = p.squaredDistanceTo(e);
+                if (d > CREPT_GONE * CREPT_GONE) {
+                    s.crept.remove(p.getUuid());
+                    continue;
+                }
+                if (d > CREPT_REACH * CREPT_REACH || s.crept.contains(p.getUuid())) continue;
+                float toThem = (float) Math.toDegrees(Math.atan2(p.getZ() - e.getZ(), p.getX() - e.getX())) - 90f;
+                if (Math.abs(MathHelper.wrapDegrees(toThem - e.getHeadYaw())) < UNSEEN_FROM) {
+                    // Seen coming: no surprise, now or while they stay close.
+                    s.crept.add(p.getUuid());
+                    continue;
+                }
+                s.crept.add(p.getUuid());
+                if (now - s.startledAt > STARTLE_REST_MS) startle(s, e, p, now);
+            }
+        }
+        long since = now - s.startledAt;
+        if (s.startledAt == 0 || since > STARTLE_RISE_MS + STARTLE_FADE_MS * 5) return;
+        float w = since < STARTLE_RISE_MS ? ease(since / (float) STARTLE_RISE_MS) : (float) Math.exp(-(since - STARTLE_RISE_MS) / (double) STARTLE_FADE_MS);
+        // The quiet ones jump the most; the cold ones barely.
+        w *= switch (kind(e)) {
+            case SHY -> 1.15f;
+            case COLD -> 0.55f;
+            case SPORTY -> 0.8f;
+            default -> 1f;
+        };
+        w = Math.min(1f, w);
+        float to = MathHelper.clamp(MathHelper.wrapDegrees(s.startleFrom - e.bodyYaw), -75f, 75f) * ((float) Math.PI / 180f);
+        m.head.yaw = MathHelper.lerp(w, m.head.yaw, to);
+        m.head.pitch -= 0.28f * w;
+        float arms = sitting ? 0.5f : 1f;
+        arm(m.rightArm, w * arms, -1.45f, -0.55f, 0f);
+        arm(m.leftArm, w * arms, -1.35f, 0.55f, 0f);
+        if (!sitting) {
+            // Back onto the heels.
+            m.rightLeg.pitch -= 0.12f * w;
+            m.leftLeg.pitch += 0.08f * w;
+        }
+    }
+
+    private static void startle(Easing s, StudentEntity e, net.minecraft.entity.Entity from, long now) {
+        s.startledAt = now;
+        s.startleFrom = (float) Math.toDegrees(Math.atan2(from.getZ() - e.getZ(), from.getX() - e.getX())) - 90f;
     }
 
     /** Side to side, degrees: standing on one leg more than the other, or rolling from foot to foot as they walk. */

@@ -43,6 +43,9 @@ public final class Unease {
 
     private static int echoLeft = 0, echoFull = 1, stepIn = 0, still = 0, ticks = 0;
     private static int echoRest = 0, breathRest = 0, noiseRest = 0;
+    /** Near enough, and in front of you, that its going would make you jump. */
+    private static final double SIGHT = 20;
+    private static boolean figureInSight = false;
     private static boolean trailing = false, sawFigure = false, hushed = false, followed = false, heard = false;
 
     private Unease() {
@@ -57,7 +60,11 @@ public final class Unease {
         // After a scare, nothing for a good while: the quiet is worse.
         StudentEntity[] figures = figures(client, p);
         boolean vanished = sawFigure && figures[0] == null;
+        // It was there in front of you, and now it isn't: that makes you jump, a little. Not one you never saw.
+        if (vanished && figureInSight) BodyFeel.startle(0.6f);
         sawFigure = figures[0] != null;
+        figureInSight = figures[0] != null && figures[0].squaredDistanceTo(p) < SIGHT * SIGHT
+                && p.getRotationVec(1f).dotProduct(figures[0].getEyePos().subtract(p.getEyePos()).normalize()) > 0.5;
         boolean scare = Cutscene.active() && SCARES.contains(Cutscene.type()) || ClientRun.chase >= 0 || vanished;
         if (scare) {
             echoRest = Math.max(echoRest, QUIET_AFTER);

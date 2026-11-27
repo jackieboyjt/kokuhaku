@@ -5,6 +5,12 @@ Versions before 1.3.0 weren't tagged at the time; their entries were written up 
 
 ## Unreleased
 
+### New
+- **You feel it.** With a bad leg you favour it, a dip and a tip on every other step. Hungry or thirsty, the world won't keep quite still. Out in the snow you shiver, in bouts. And when something makes you jump, you jump. It's only ever the view, never in a scene, and the game's own Distortion Effects setting turns it down or off.
+- **People jump too.** Walk up right behind someone without them seeing you, and they start when they notice: hands up, head round. A car coming straight at them does the same. Once, and then they feel a bit silly.
+- **They watch you.** Once people are frightened, or grieving, they keep an eye on everyone, you included: a look from across the room, held a moment too long.
+- **The cold gets into them.** On a snow day, anyone standing about outside hugs themselves with their free hand, keeps their chin down, stamps their feet now and then and shivers.
+
 ### Fixed
 - The hospital's upper floors couldn't be reached. Both flights of stairs were built in the same place, so the second filled the headroom of the first, and you couldn't climb past the fourth step. The flights now sit either side of the walkway, so the records room on the top floor, and the diary page in it, can be found again.
 - Hours in a hospital bed, or the two hours she takes from you, skipped straight over the end of school. Detention you weren't there for followed you into the next day, and on a note day the note in your coat pocket was lost. Detention is let off now, and after a hospital stay the note is in your pocket when you're back on your feet.

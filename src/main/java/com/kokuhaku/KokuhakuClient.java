@@ -132,6 +132,7 @@ public class KokuhakuClient implements ClientModInitializer {
             unbindTheRest(client);
             StepRule.tick(client);
             com.kokuhaku.client.Unease.tick(client);
+            com.kokuhaku.client.BodyFeel.tick(client);
             if (client.player != null && ClientRun.active) {
                 // Only two slots to your name.
                 if (client.player.getInventory().selectedSlot > 1) client.player.getInventory().selectedSlot = 0;
@@ -150,6 +151,7 @@ public class KokuhakuClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             sameVersion = false;
             ClientRun.reset();
+            com.kokuhaku.client.BodyFeel.reset();
             com.kokuhaku.client.RadioPlayer.stop(client);
             Cutscene.stop();
             Party.reset();

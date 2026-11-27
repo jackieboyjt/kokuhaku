@@ -9,12 +9,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** The camera has no roll of its own, so a cutscene's sideways tilt goes in here. */
+/** The camera has no roll of its own, so a cutscene's sideways tilt, and your own body's, go in here. */
 @Mixin(GameRenderer.class)
 public class GameRendererMixin {
     @Inject(method = "tiltViewWhenHurt", at = @At("HEAD"))
     private void kokuhaku$cutsceneRoll(MatrixStack matrices, float tickDelta, CallbackInfo ci) {
-        float roll = Cutscene.roll();
+        float roll = Cutscene.roll() + com.kokuhaku.client.BodyFeel.roll(net.minecraft.client.MinecraftClient.getInstance(), tickDelta);
         if (roll != 0f) matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(roll));
     }
 }
