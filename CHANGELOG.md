@@ -26,6 +26,9 @@ Versions before 1.3.0 weren't tagged at the time; their entries were written up 
 - A photo taken at the moment a scene started could leave the clock, money and phone hidden for the rest of the run.
 - The mute key did nothing during scenes, walks, grabs and the end.
 - Disconnecting while talking could leave your microphone open.
+- The bedroom light could come on twice more after every Continue, and the clearing in the forest could be found again. Both are kept with the run now: twice a run means twice a run.
+- The footsteps behind you in the forest never stopped as long as you kept walking. They give up after a while now, and then it's quiet for a bit.
+- On the title screen, a friend's menu stayed open after they'd left, and could act on someone else's box. It closes when the party changes.
 
 ## 1.5.1 — 23 November 2026
 

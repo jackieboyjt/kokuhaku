@@ -48,7 +48,6 @@ final class ForestScares {
     private static final Map<UUID, Visit> visits = new HashMap<>();
     private static final List<Entity> clearing = new ArrayList<>();
     private static BlockPos clearingAt = null;
-    private static boolean clearingSeen = false;
     private static int ticks = 0;
 
     private ForestScares() {
@@ -61,7 +60,6 @@ final class ForestScares {
         visits.clear();
         clearing.clear();
         clearingAt = null;
-        clearingSeen = false;
         ticks = 0;
     }
 
@@ -148,6 +146,12 @@ final class ForestScares {
             v.stoppedFor = 0;
         }
         if (v.echoUntil == 0) return;
+        // Ten seconds of it at most, even if you never stop: then the steps just aren't there any more.
+        if (moving && ticks > v.echoUntil) {
+            v.echoUntil = 0;
+            v.nextSteps = ticks + STEPS_FROM + RANDOM.nextInt(STEPS_MORE);
+            return;
+        }
         if (moving) {
             v.stoppedFor = 0;
             if (v.lastStep.squaredDistanceTo(now) > STRIDE * STRIDE) {
@@ -224,7 +228,7 @@ final class ForestScares {
     /** Once. Somewhere ahead of you, deep enough in that nobody else would ever find it. */
     private static void clearing(ServerPlayerEntity p, RunState s, Visit v) {
         ServerWorld world = p.getServerWorld();
-        if (clearingAt == null && v.inside >= (TESTING ? 200 : CLEARING_AFTER)) {
+        if (clearingAt == null && !s.clearingSeen && v.inside >= (TESTING ? 200 : CLEARING_AFTER)) {
             // Somewhere ahead, or off to one side, on dry ground about level with you.
             int x = 0, z = 0, y = 0;
             boolean found = false;
@@ -254,8 +258,9 @@ final class ForestScares {
             }
             Kokuhaku.LOG.info("A clearing in the forest at {}", clearingAt.toShortString());
         }
-        if (clearingAt == null || clearingSeen || p.getPos().squaredDistanceTo(Vec3d.ofBottomCenter(clearingAt)) > CLEARING_REACH * CLEARING_REACH) return;
-        clearingSeen = true;
+        if (clearingAt == null || s.clearingSeen || p.getPos().squaredDistanceTo(Vec3d.ofBottomCenter(clearingAt)) > CLEARING_REACH * CLEARING_REACH) return;
+        s.clearingSeen = true;
+        s.markDirty();
         Shadow.saw(s, "She comes to the clearing most nights. She keeps the candles going.");
         Talk.say(p, "In the clearing", "A ring of candles, still burning. On the stump, photos, a lot of them. Every one of them is you. The newest is from today, from behind, on this path.",
                 Talk.option("Take one.", q -> {

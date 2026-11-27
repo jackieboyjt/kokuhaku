@@ -30,6 +30,8 @@ public class RoadsideNavigation extends MobNavigation {
         nodeMaker = new LandPathNodeMaker() {
             @Override
             public PathNodeType getDefaultNodeType(BlockView world, int x, int y, int z) {
+                // Only while a path is actually being made for someone: between searches there's nobody to ask.
+                if (entity == null) return super.getDefaultNodeType(world, x, y, z);
                 // Anyone who's somehow out in the road is allowed to walk off it.
                 boolean inTheRoad = Town.isRoad(world, entity.getBlockX(), entity.getBlockZ());
                 if (!inTheRoad && (y == STREET_LEVEL || y == KERB_LEVEL) && Town.isRoad(world, x, z)) return PathNodeType.BLOCKED;
@@ -42,7 +44,7 @@ public class RoadsideNavigation extends MobNavigation {
                 PathNodeType type = super.getDefaultNodeType(world, x, y, z);
                 if (type != PathNodeType.WALKABLE) return type;
                 // Nobody stands on the furniture.
-                if (entity != null && !entity.getWorld().isClient && Furniture.at(entity.getWorld(), here.down())) return PathNodeType.BLOCKED;
+                if (!entity.getWorld().isClient && Furniture.at(entity.getWorld(), here.down())) return PathNodeType.BLOCKED;
                 // Walkable, for anyone actually going there, but never a short cut.
                 BlockState under = world.getBlockState(new BlockPos(x, y - 1, z));
                 if (under.isOf(Blocks.GRASS_BLOCK) || under.isOf(Blocks.DIRT) || under.isOf(Blocks.COARSE_DIRT) || under.isOf(Blocks.GRAVEL) || under.isOf(Blocks.SAND)) return PathNodeType.DANGER_OTHER;

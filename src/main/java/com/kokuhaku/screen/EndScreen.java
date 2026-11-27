@@ -10,8 +10,9 @@ import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.text.Text;
 
 /**
- * Black screen with the result, then back to the bedroom menu.
- * TODO(cutscene phase): the day-31 bat ending and the jumpscare replace the losing version of this.
+ * Black screen with the result, then back to the bedroom menu. Being taken (day 31 included)
+ * ends in the JumpscareScreen instead; a loss lands here only when there's no her to show:
+ * expelled, two weeks kept in her house, or a ghost with nobody left to haunt.
  */
 public class EndScreen extends Screen {
     private static final long SHOW_MS = 8000, LINE_MS = 2500;

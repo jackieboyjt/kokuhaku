@@ -40,8 +40,6 @@ final class HomeChanges {
 
     private static final int LIGHT_FROM_DAY = 4, LIGHTS_A_RUN = 2, LIGHT_ONE_IN = 25, FAR_FROM_DOOR = 30, AT_DOOR = 8, NO_GIRL_WITHIN = 48;
     private static final List<Lit> lit = new ArrayList<>();
-    private static int litThisRun = 0;
-    private static boolean toldOnce = false;
     // Whoever heard it go off: something's been moved when they get in.
     private static final Set<UUID> expect = new HashSet<>();
 
@@ -54,8 +52,6 @@ final class HomeChanges {
         told = 0;
         for (Lit l : lit) off(l);
         lit.clear();
-        litThisRun = 0;
-        toldOnce = false;
         expect.clear();
     }
 
@@ -80,7 +76,7 @@ final class HomeChanges {
         boolean inside = room.contains(p.getPos());
         ServerWorld world = p.getServerWorld();
         if (mine == null) {
-            if (inside || s.day < LIGHT_FROM_DAY || litThisRun >= LIGHTS_A_RUN) return;
+            if (inside || s.day < LIGHT_FROM_DAY || s.lightsLit >= LIGHTS_A_RUN) return;
             int curfew = RunManager.curfewOf(s);
             if (s.minute < Schedule.EVENING + 30 || s.minute > curfew - 30) return;
             BlockPos door = RunManager.frontDoor(world, room);
@@ -95,7 +91,8 @@ final class HomeChanges {
                 if (!room.containsBlock(at) || !world.isAir(at)) continue;
                 world.setBlockState(at, Blocks.LIGHT.getDefaultState().with(LightBlock.LEVEL_15, 12));
                 lit.add(new Lit(p.getUuid(), world, at.toImmutable(), s.day));
-                litThisRun++;
+                s.lightsLit++;
+                s.markDirty();
                 return;
             }
             return;
@@ -114,8 +111,9 @@ final class HomeChanges {
         lit.remove(mine);
         RunManager.soundFor(p, SoundEvents.BLOCK_STONE_BUTTON_CLICK_OFF, Vec3d.ofCenter(mine.at()), 1.0f, 0.9f);
         expect.add(p.getUuid());
-        if (!toldOnce) {
-            toldOnce = true;
+        if (!s.lightToldOf) {
+            s.lightToldOf = true;
+            s.markDirty();
             RunManager.later(40, () -> RunManager.tell(p, "", "The light in your room just went off."));
         }
         Shadow.saw(s, "She was sitting on your bed with the light on. She switched it off when she heard you at the door.");

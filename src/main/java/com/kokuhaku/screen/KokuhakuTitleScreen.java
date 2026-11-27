@@ -46,6 +46,8 @@ public class KokuhakuTitleScreen extends Screen {
     private static final float SPECTATOR_ALPHA = 0.3f;
     /** Whose box has its little menu open, or -1. */
     private int menuFor = -1;
+    /** Who that menu was opened for, so it can close if they leave or the boxes shuffle round. */
+    private java.util.UUID menuMember = null;
 
     private final Random random = new Random();
     private final MenuAmbience ambience = new MenuAmbience();
@@ -107,6 +109,17 @@ public class KokuhakuTitleScreen extends Screen {
         memberMenu();
     }
 
+    @Override
+    public void tick() {
+        super.tick();
+        // The party changed under an open menu: someone left, or everyone moved along a box.
+        if (menuFor >= 0 && (menuFor >= Party.members.size() || !Party.members.get(menuFor).id().equals(menuMember))) {
+            menuFor = -1;
+            menuMember = null;
+            clearAndInit();
+        }
+    }
+
     private boolean mine(Party.Member m) {
         return m.id().equals(client.player.getUuid());
     }
@@ -115,6 +128,7 @@ public class KokuhakuTitleScreen extends Screen {
     private void memberMenu() {
         if (menuFor < 0 || menuFor >= Party.members.size()) return;
         Party.Member m = Party.members.get(menuFor);
+        menuMember = m.id();
         int x = menuX(), y = menuY();
         addDrawableChild(new MenuButton(x + 6, y + 4, MENU_W - 8, 14, KokuhakuClient.menuText("View profile"), b -> {
             menuFor = -1;

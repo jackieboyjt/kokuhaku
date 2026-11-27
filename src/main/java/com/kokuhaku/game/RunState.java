@@ -98,6 +98,9 @@ public class RunState extends PersistentState {
     public int livingVictim = -1;
     /** The girl the last note warned you off, until you go back to her: kept so a Continue still remembers. */
     public int warnedNow = -1;
+    /** Once-a-run things, kept so a Continue doesn't give you them again: how often your bedroom light's been on, whether you've been told it went off, and whether you've found the clearing. */
+    public int lightsLit = 0;
+    public boolean lightToldOf = false, clearingSeen = false;
     /** The last day something happened to you, and what's already happened. */
     public int scenarioDay = 0;
     public final Set<Integer> scenarios = new LinkedHashSet<>();
@@ -239,6 +242,9 @@ public class RunState extends PersistentState {
         nbt.putBoolean("SaidIt", saidIt);
         nbt.putInt("LivingVictim", livingVictim);
         nbt.putInt("WarnedNow", warnedNow);
+        nbt.putInt("LightsLit", lightsLit);
+        nbt.putBoolean("LightToldOf", lightToldOf);
+        nbt.putBoolean("ClearingSeen", clearingSeen);
         nbt.putInt("ScenarioDay", scenarioDay);
         nbt.putIntArray("Scenarios", scenarios.stream().mapToInt(Integer::intValue).toArray());
         nbt.putIntArray("Pages", pages.stream().mapToInt(Integer::intValue).toArray());
@@ -377,6 +383,10 @@ public class RunState extends PersistentState {
         s.saidIt = nbt.getBoolean("SaidIt");
         s.livingVictim = nbt.contains("LivingVictim") ? nbt.getInt("LivingVictim") : -1;
         s.warnedNow = nbt.contains("WarnedNow") ? nbt.getInt("WarnedNow") : -1;
+        // Older saves don't say: as if none of it had happened yet.
+        s.lightsLit = nbt.getInt("LightsLit");
+        s.lightToldOf = nbt.getBoolean("LightToldOf");
+        s.clearingSeen = nbt.getBoolean("ClearingSeen");
         s.scenarioDay = nbt.getInt("ScenarioDay");
         for (int i : nbt.getIntArray("Scenarios")) s.scenarios.add(i);
         for (int i : nbt.getIntArray("Pages")) s.pages.add(i);
